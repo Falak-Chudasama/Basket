@@ -23,3 +23,4 @@ class ChatRequest(BaseModel):
     stop: Optional[Any] = None
     seed: Optional[int] = None
     system_prompt: Optional[str] = None
+    abstracted: bool = True

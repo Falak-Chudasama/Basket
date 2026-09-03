@@ -32,7 +32,6 @@ LM_STUDIO_MODELS_URL = (
 )
 
 # Native LM Studio model-management API.
-# This endpoint exposes loaded_instances and model metadata.
 LM_STUDIO_API_MODELS_URL = (
     f"{LM_STUDIO_BASE_URL}/api/v1/models"
 )
@@ -152,6 +151,132 @@ def _build_lm_payload(request: ChatRequest):
 
 
 # ============================================================
+# RESPONSE ABSTRACTION
+# ============================================================
+
+def _extract_text(response_data):
+    """
+    Extract only the generated assistant text from an
+    OpenAI-compatible non-streaming response.
+    """
+
+    if not isinstance(response_data, dict):
+        return str(response_data)
+
+    choices = response_data.get(
+        "choices",
+        []
+    )
+
+    if not choices:
+        return ""
+
+    first_choice = choices[0]
+
+    if not isinstance(first_choice, dict):
+        return ""
+
+    message = first_choice.get(
+        "message",
+        {}
+    )
+
+    if not isinstance(message, dict):
+        return ""
+
+    content = message.get(
+        "content",
+        ""
+    )
+
+    if content is None:
+        return ""
+
+    # Normal text response.
+    if isinstance(content, str):
+        return content
+
+    # Defensive support for structured content.
+    if isinstance(content, list):
+
+        parts = []
+
+        for item in content:
+
+            if not isinstance(item, dict):
+                continue
+
+            text = item.get("text")
+
+            if isinstance(text, str):
+                parts.append(text)
+
+        return "".join(parts)
+
+    return str(content)
+
+
+def _extract_stream_text(data):
+    """
+    Extract only the generated text from one OpenAI-compatible
+    streaming SSE JSON payload.
+    """
+
+    if not isinstance(data, dict):
+        return ""
+
+    choices = data.get(
+        "choices",
+        []
+    )
+
+    if not choices:
+        return ""
+
+    first_choice = choices[0]
+
+    if not isinstance(first_choice, dict):
+        return ""
+
+    delta = first_choice.get(
+        "delta",
+        {}
+    )
+
+    if not isinstance(delta, dict):
+        return ""
+
+    content = delta.get(
+        "content",
+        ""
+    )
+
+    if content is None:
+        return ""
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+
+        parts = []
+
+        for item in content:
+
+            if not isinstance(item, dict):
+                continue
+
+            text = item.get("text")
+
+            if isinstance(text, str):
+                parts.append(text)
+
+        return "".join(parts)
+
+    return str(content)
+
+
+# ============================================================
 # MODEL STATE HELPERS
 # ============================================================
 
@@ -159,9 +284,6 @@ async def _get_model_state():
     """
     Get all models known to LM Studio, including their
     currently loaded instances.
-
-    Uses the native LM Studio API because /api/v1/models
-    exposes loaded_instances.
     """
 
     async with httpx.AsyncClient(
@@ -212,9 +334,6 @@ async def _get_model_state():
 async def _get_loaded_instances():
     """
     Return all loaded LM Studio model instances.
-
-    The native /api/v1/models endpoint returns models and
-    their loaded_instances.
     """
 
     model_state = await _get_model_state()
@@ -242,6 +361,7 @@ async def _get_loaded_instances():
         for instance in instances:
 
             if isinstance(instance, dict):
+
                 loaded_instances.append(
                     {
                         "model": model,
@@ -256,37 +376,27 @@ async def _ensure_model_loaded():
     """
     Ensure that at least one model is loaded.
 
-    If LM Studio has no loaded model, DEFAULT_LLM is loaded.
-
-    Returns:
-        The loaded model state.
+    If nothing is loaded, DEFAULT_LLM is loaded automatically.
     """
 
     loaded_instances = await _get_loaded_instances()
 
-    # --------------------------------------------------------
-    # MODEL ALREADY LOADED
-    # --------------------------------------------------------
-
     if loaded_instances:
+
         return {
             "loaded": True,
             "loaded_instances": loaded_instances,
             "loaded_default": False,
         }
 
-    # --------------------------------------------------------
-    # NOTHING LOADED -> LOAD DEFAULT_LLM
-    # --------------------------------------------------------
-
     await _load_model(
         DEFAULT_LLM
     )
 
-    # Verify that loading actually succeeded.
     loaded_instances = await _get_loaded_instances()
 
     if not loaded_instances:
+
         raise HTTPException(
             status_code=503,
             detail=(
@@ -310,10 +420,6 @@ async def non_streaming_completion(
     request: ChatRequest,
 ):
 
-    # --------------------------------------------------------
-    # ENSURE SOMETHING IS LOADED
-    # --------------------------------------------------------
-
     await _ensure_model_loaded()
 
     payload = _build_lm_payload(request)
@@ -325,6 +431,7 @@ async def non_streaming_completion(
     ) as http_client:
 
         try:
+
             response = await http_client.post(
                 LM_STUDIO_URL,
                 json=payload,
@@ -332,25 +439,28 @@ async def non_streaming_completion(
             )
 
         except httpx.ConnectError:
+
             raise HTTPException(
                 status_code=503,
                 detail="Unable to connect to LM Studio.",
             )
 
         except httpx.TimeoutException:
+
             raise HTTPException(
                 status_code=504,
                 detail="LM Studio request timed out.",
             )
 
         except httpx.HTTPError as exc:
+
             raise HTTPException(
                 status_code=502,
                 detail=f"LM Studio HTTP error: {exc}",
             )
 
     # --------------------------------------------------------
-    # HANDLE MODEL-NOT-LOADED TYPE ERRORS
+    # MODEL-NOT-LOADED TYPE ERRORS
     # --------------------------------------------------------
 
     if response.status_code >= 400:
@@ -375,31 +485,33 @@ async def non_streaming_completion(
 
         if model_not_loaded:
 
-            try:
-                await _load_model(
-                    DEFAULT_LLM
-                )
+            await _load_model(
+                DEFAULT_LLM
+            )
 
-                # Retry exactly once.
-                response = await http_client.post(
-                    LM_STUDIO_URL,
-                    json=payload,
-                    headers=_headers(),
-                )
+            async with httpx.AsyncClient(
+                timeout=_timeout()
+            ) as retry_client:
 
-            except HTTPException:
-                raise
+                try:
 
-            except httpx.HTTPError as exc:
-                raise HTTPException(
-                    status_code=502,
-                    detail=(
-                        f"LM Studio retry failed: {exc}"
-                    ),
-                )
+                    response = await retry_client.post(
+                        LM_STUDIO_URL,
+                        json=payload,
+                        headers=_headers(),
+                    )
+
+                except httpx.HTTPError as exc:
+
+                    raise HTTPException(
+                        status_code=502,
+                        detail=(
+                            f"LM Studio retry failed: {exc}"
+                        ),
+                    )
 
     # --------------------------------------------------------
-    # FINAL ERROR HANDLING
+    # FINAL ERROR
     # --------------------------------------------------------
 
     if response.status_code >= 400:
@@ -416,7 +528,23 @@ async def non_streaming_completion(
             detail=error_data,
         )
 
-    return response.json()
+    response_data = response.json()
+
+    # ========================================================
+    # ABSTRACTED RESPONSE
+    # ========================================================
+
+    if request.abstracted:
+
+        return _extract_text(
+            response_data
+        )
+
+    # ========================================================
+    # RAW RESPONSE
+    # ========================================================
+
+    return response_data
 
 
 # ============================================================
@@ -426,10 +554,6 @@ async def non_streaming_completion(
 async def streaming_completion(
     request: ChatRequest,
 ):
-
-    # --------------------------------------------------------
-    # ENSURE SOMETHING IS LOADED
-    # --------------------------------------------------------
 
     await _ensure_model_loaded()
 
@@ -491,7 +615,7 @@ async def streaming_completion(
         )
 
     # --------------------------------------------------------
-    # MODEL-NOT-LOADED / ERROR RESPONSE
+    # ERROR RESPONSE
     # --------------------------------------------------------
 
     if response.status_code >= 400:
@@ -502,13 +626,16 @@ async def streaming_completion(
         await http_client.aclose()
 
         try:
+
             error_data = json.loads(
                 body.decode(
                     "utf-8",
                     errors="replace",
                 )
             )
+
         except Exception:
+
             error_data = {
                 "error": body.decode(
                     "utf-8",
@@ -529,15 +656,10 @@ async def streaming_completion(
 
         if model_not_loaded:
 
-            # Load the default model.
             await _load_model(
                 DEFAULT_LLM
             )
 
-            # Retry by recursively creating the streaming request.
-            #
-            # This is limited to one retry by the internal
-            # ensure-model check plus successful loading.
             retry_request = request.model_copy(
                 deep=True
             )
@@ -552,17 +674,78 @@ async def streaming_completion(
         )
 
     # --------------------------------------------------------
-    # PASS SSE STREAM THROUGH TO QUINCE
+    # STREAM GENERATOR
     # --------------------------------------------------------
 
     async def event_generator():
 
         try:
 
-            async for chunk in response.aiter_raw():
+            # ------------------------------------------------
+            # RAW MODE
+            # ------------------------------------------------
 
-                if chunk:
-                    yield chunk
+            if not request.abstracted:
+
+                async for chunk in response.aiter_raw():
+
+                    if chunk:
+                        yield chunk
+
+                return
+
+            # ------------------------------------------------
+            # ABSTRACTED MODE
+            # ------------------------------------------------
+            #
+            # LM Studio -> SSE
+            #
+            # data: {"choices":[{"delta":{"content":"Hello"}}]}
+            #
+            # Basket -> "Hello"
+            #
+            # No SSE envelope reaches Quince.
+            # ------------------------------------------------
+
+            async for line in response.aiter_lines():
+
+                if not line:
+                    continue
+
+                # SSE comments / metadata.
+                if line.startswith(":"):
+                    continue
+
+                # We only care about SSE data events.
+                if not line.startswith("data:"):
+                    continue
+
+                data = line[
+                    len("data:"):
+                ].strip()
+
+                if not data:
+                    continue
+
+                if data == "[DONE]":
+                    break
+
+                try:
+
+                    chunk_data = json.loads(
+                        data
+                    )
+
+                except json.JSONDecodeError:
+
+                    continue
+
+                text = _extract_stream_text(
+                    chunk_data
+                )
+
+                if text:
+                    yield text
 
         except httpx.HTTPError as exc:
 
@@ -574,6 +757,22 @@ async def streaming_completion(
 
             await response.aclose()
             await http_client.aclose()
+
+    # --------------------------------------------------------
+    # RESPONSE TYPE
+    # --------------------------------------------------------
+
+    if request.abstracted:
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     return StreamingResponse(
         event_generator(),
@@ -591,36 +790,34 @@ async def streaming_completion(
 # ============================================================
 
 async def _get_models():
-    """
-    Return the OpenAI-compatible model list.
-
-    This is useful for discovering available models, while
-    _get_model_state() is used for loaded-state management.
-    """
 
     async with httpx.AsyncClient(
         timeout=_timeout()
     ) as http_client:
 
         try:
+
             response = await http_client.get(
                 LM_STUDIO_MODELS_URL,
                 headers=_headers(),
             )
 
         except httpx.ConnectError:
+
             raise HTTPException(
                 status_code=503,
                 detail="Unable to connect to LM Studio.",
             )
 
         except httpx.TimeoutException:
+
             raise HTTPException(
                 status_code=504,
                 detail="LM Studio model request timed out.",
             )
 
         except httpx.HTTPError as exc:
+
             raise HTTPException(
                 status_code=502,
                 detail=f"LM Studio HTTP error: {exc}",
@@ -650,11 +847,6 @@ async def _get_models():
 async def _unload_model(
     model_id: str,
 ):
-    """
-    Unload a model instance.
-
-    LM Studio's unload API expects the unique instance_id.
-    """
 
     payload = {
         "instance_id": model_id,
@@ -673,18 +865,21 @@ async def _unload_model(
             )
 
         except httpx.ConnectError:
+
             raise HTTPException(
                 status_code=503,
                 detail="Unable to connect to LM Studio.",
             )
 
         except httpx.TimeoutException:
+
             raise HTTPException(
                 status_code=504,
                 detail="LM Studio unload request timed out.",
             )
 
         except httpx.HTTPError as exc:
+
             raise HTTPException(
                 status_code=502,
                 detail=f"LM Studio HTTP error: {exc}",
@@ -727,7 +922,6 @@ async def _unload_all_models():
         if not isinstance(instance, dict):
             continue
 
-        # Current LM Studio API calls this model_instance_id.
         instance_id = (
             instance.get("model_instance_id")
             or instance.get("instance_id")
@@ -751,6 +945,7 @@ async def _unload_all_models():
             )
 
         except HTTPException:
+
             continue
 
     return {
@@ -772,7 +967,7 @@ async def _load_model(
 ):
 
     # --------------------------------------------------------
-    # DO NOT LOAD A DUPLICATE INSTANCE
+    # DO NOT LOAD DUPLICATE
     # --------------------------------------------------------
 
     loaded_instances = await _get_loaded_instances()
@@ -808,6 +1003,7 @@ async def _load_model(
             loaded_model_key == model_id
             or loaded_instance_model == model_id
         ):
+
             return {
                 "status": "already_loaded",
                 "model": model_id,
@@ -819,7 +1015,7 @@ async def _load_model(
             }
 
     # --------------------------------------------------------
-    # LOAD MODEL
+    # LOAD
     # --------------------------------------------------------
 
     payload = {
@@ -851,18 +1047,21 @@ async def _load_model(
             )
 
         except httpx.ConnectError:
+
             raise HTTPException(
                 status_code=503,
                 detail="Unable to connect to LM Studio.",
             )
 
         except httpx.TimeoutException:
+
             raise HTTPException(
                 status_code=504,
                 detail="LM Studio load request timed out.",
             )
 
         except httpx.HTTPError as exc:
+
             raise HTTPException(
                 status_code=502,
                 detail=f"LM Studio HTTP error: {exc}",
@@ -894,23 +1093,11 @@ async def _chat(
 ):
 
     if not request.messages:
+
         raise HTTPException(
             status_code=400,
             detail="At least one message is required.",
         )
-
-    # --------------------------------------------------------
-    # PRE-LOAD CHECK
-    # --------------------------------------------------------
-    #
-    # If nothing is loaded:
-    #
-    #     DEFAULT_LLM is loaded automatically.
-    #
-    # Otherwise the currently loaded model is left alone.
-    #
-    # This keeps the gateway stateless with respect to chat
-    # history while still making model availability automatic.
 
     await _ensure_model_loaded()
 
