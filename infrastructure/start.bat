@@ -25,7 +25,8 @@ start "Basket - LM Studio" cmd /k "lms server start --port %LLM_PORT%"
 timeout /t 2 /nobreak >nul
 
 echo [4/4] Starting Pocket TTS...
-start "Basket - Pocket TTS" cmd /k "pocket-tts serve --host %HOST% --port %TTS_PORT%"
+
+start "Basket - Pocket TTS" cmd /k "cd /d C:\pocket-tts && call .venv\Scripts\activate.bat && pocket-tts serve --host %HOST% --port %TTS_PORT%"
 
 echo.
 echo ==========================================

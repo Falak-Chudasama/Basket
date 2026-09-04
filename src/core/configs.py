@@ -9,10 +9,13 @@ PRODUCTION = bool(os.getenv("PRODUCTION", True))
 
 LMS_HOST = os.getenv("LM_HOST", "127.0.0.1")
 LMS_PORT = int(os.getenv("LM_PORT", "7001"))
-
 LM_STUDIO_API_KEY = os.getenv("LM_STUDIO_API_KEY","lm-studio")
-
 DEFAULT_LLM = "qwen/qwen3-vl-4b"
+
+TTS_HOST = os.getenv("TTS_HOST", "127.0.0.1")
+TTS_PORT = int(os.getenv("TTS_PORT", "7003"))
+DEFAULT_TTS_VOICE = "jane"
+DEFAULT_TTS_TEMP = 0.65
 
 models = {
     "default": DEFAULT_LLM,
