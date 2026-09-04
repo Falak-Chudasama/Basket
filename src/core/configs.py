@@ -15,7 +15,11 @@ DEFAULT_LLM = "qwen/qwen3-vl-4b"
 TTS_HOST = os.getenv("TTS_HOST", "127.0.0.1")
 TTS_PORT = int(os.getenv("TTS_PORT", "7003"))
 DEFAULT_TTS_VOICE = "jane"
-DEFAULT_TTS_TEMP = 0.65
+DEFAULT_TTS_TEMP = 0.75
+
+STT_HOST = os.getenv("STT_HOST", "127.0.0.1")
+STT_PORT = int(os.getenv("STT_PORT", "7002"))
+DEFAULT_STT_MODEL = "Qwen3-ASR-0.6B-Q8_0"
 
 models = {
     "default": DEFAULT_LLM,

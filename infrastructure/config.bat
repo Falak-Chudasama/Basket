@@ -24,8 +24,8 @@ set "LLAMA_DIR=C:\llama.cpp\build\bin"
 
 REM ---------- Qwen3-ASR ----------
 REM Put your actual GGUF paths here.
-set "ASR_MODEL=C:\models\Qwen3-ASR-0.6B-text-Q8_0.gguf"
-set "ASR_MMPROJ=C:\models\Qwen3-ASR-0.6B-mmproj.gguf"
+set ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\Qwen3-ASR-0.6B-Q8_0.gguf
+set ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf
 
 REM ---------- LM Studio ----------
 REM lms is assumed to be available in PATH.
