@@ -46,8 +46,8 @@ REALTIME_TTS_SAMPLE_WIDTH = 2
 @dataclass(slots=True)
 class VoicePipelineConfig:
     """
-    Client-supplied configuration for Basket's orchestration
-    pipeline.
+    Client-supplied configuration for Basket's
+    voice orchestration pipeline.
     """
 
     # --------------------------------------------------------
@@ -68,6 +68,8 @@ class VoicePipelineConfig:
     max_tokens: int | None = None
     stop: object | None = None
     seed: int | None = None
+
+    abstracted: bool = True
 
     # --------------------------------------------------------
     # TTS
@@ -306,7 +308,7 @@ async def _stream_llm_text(
         stop=config.stop,
         seed=config.seed,
         system_prompt=config.system_prompt,
-        abstracted=True,
+        abstracted=config.abstracted,
     )
 
     response = await streaming_completion(

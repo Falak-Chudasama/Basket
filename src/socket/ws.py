@@ -5,12 +5,7 @@ import json
 import logging
 from typing import Final
 
-from fastapi import (
-    APIRouter,
-    WebSocket,
-    WebSocketDisconnect,
-    status,
-)
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from src.clients.llama_stt import (
     STREAM_MIN_AUDIO_SECONDS,
@@ -22,8 +17,7 @@ from src.clients.llama_stt import (
     _timeout,
     stream_audio_duration_seconds,
 )
-from src.schemas.STTSchema import STTRequest
-
+from src.schemas.VoiceSchema import VoiceStartRequest
 from src.services.chat_pipeline import (
     PipelineEvent,
     VoicePipelineConfig,
@@ -34,18 +28,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-WS_PATH: Final[str] = "/stt/stream"
+WS_PATH: Final[str] = "/ws"
 
 
 # ============================================================
 # HELPERS
 # ============================================================
 
+
 def _json_event(event: PipelineEvent) -> dict:
     """
-    Convert an internal pipeline event into a JSON-safe event.
+    Convert an internal pipeline event into a JSON-safe object.
 
-    Binary events are intentionally NOT handled here.
+    Binary TTS events are handled separately by the WebSocket
+    transport and are never passed through here.
     """
 
     return {
@@ -55,27 +51,16 @@ def _json_event(event: PipelineEvent) -> dict:
 
 
 # ============================================================
-# STT WEBSOCKET
+# VOICE WEBSOCKET
 # ============================================================
+
 
 @router.websocket(WS_PATH)
 async def stt_stream(
     websocket: WebSocket,
 ) -> None:
     """
-    Basket realtime voice transport.
-
-    Current responsibility:
-
-        WebSocket
-            ↓
-        receive client audio / control events
-            ↓
-        collect utterance
-            ↓
-        call chat_pipeline.voice_to_voice()
-            ↓
-        forward pipeline events to client
+    Basket voice-to-voice WebSocket transport.
 
     Client -> Server:
 
@@ -84,28 +69,35 @@ async def stt_stream(
         ...
         {"type":"stop"}
 
-    Server -> Client:
+    Optional control messages:
 
-        {"type":"ready", ...}
-        {"type":"started", ...}
+        {"type":"cancel"}
+        {"type":"ping"}
 
-        {"type":"pipeline.started", ...}
+    The start message contains:
 
-        {"type":"stt.started", ...}
-        {"type":"stt.final", ...}
+        STT:
+            prompt
+            stream
+            sample_rate
 
-        {"type":"llm.token", ...}
-        {"type":"tts.started", ...}
+        LLM:
+            model
+            messages
+            temperature
+            top_p
+            max_tokens
+            stop
+            seed
+            system_prompt
+            abstracted
 
-        <binary PCM16 TTS audio frames>
+        TTS:
+            voice
+            temperature
 
-        {"type":"tts.completed", ...}
-        {"type":"llm.final", ...}
-
-        {"type":"pipeline.completed", ...}
-
-    The WebSocket does NOT implement LLM or TTS logic itself.
-    That lives in chat_pipeline.py.
+    TTS text is intentionally not supplied by the client.
+    Basket derives TTS text from the generated LLM response.
     """
 
     await websocket.accept()
@@ -117,36 +109,26 @@ async def stt_stream(
 
     started = False
 
-    prompt: str | None = None
+    voice_config = VoiceStartRequest()
 
     # --------------------------------------------------------
-    # Pipeline configuration
-    # --------------------------------------------------------
-
-    pipeline_config = VoicePipelineConfig()
-
-    # --------------------------------------------------------
-    # Audio state
+    # AUDIO STATE
     # --------------------------------------------------------
 
     audio_buffer = bytearray()
 
     # --------------------------------------------------------
-    # Partial STT state
-    #
-    # We keep this here because live STT is transport-level
-    # behavior for now. The final voice pipeline is handled by
-    # chat_pipeline.py.
+    # PARTIAL STT STATE
     # --------------------------------------------------------
 
-    stream_enabled = True
-
     last_partial_audio_bytes = 0
+
     partial_task: asyncio.Task | None = None
+
     last_partial_text = ""
 
     # --------------------------------------------------------
-    # Concurrency
+    # SEND CONCURRENCY
     # --------------------------------------------------------
 
     send_lock = asyncio.Lock()
@@ -154,6 +136,7 @@ async def stt_stream(
     async def send_json(
         payload: dict,
     ) -> None:
+
         async with send_lock:
 
             await websocket.send_json(
@@ -173,24 +156,31 @@ async def stt_stream(
             }
         )
 
+    # ========================================================
+    # AUDIO SIZING
+    # ========================================================
+
     def window_bytes() -> int:
+
         return int(
             STREAM_WINDOW_SECONDS
-            * STREAM_SAMPLE_RATE
+            * voice_config.sample_rate
             * STREAM_SAMPLE_WIDTH
         )
 
     def min_audio_bytes() -> int:
+
         return int(
             STREAM_MIN_AUDIO_SECONDS
-            * STREAM_SAMPLE_RATE
+            * voice_config.sample_rate
             * STREAM_SAMPLE_WIDTH
         )
 
     def partial_interval_bytes() -> int:
+
         return int(
             STREAM_PARTIAL_INTERVAL_SECONDS
-            * STREAM_SAMPLE_RATE
+            * voice_config.sample_rate
             * STREAM_SAMPLE_WIDTH
         )
 
@@ -199,15 +189,6 @@ async def stt_stream(
     # ========================================================
 
     async def run_partial_stt() -> None:
-        """
-        Generate a rolling-window STT partial.
-
-        This exists only to provide live transcript feedback
-        while the user is holding Ctrl+Q.
-
-        The authoritative transcript is still produced by
-        voice_to_voice() during the stop/final stage.
-        """
 
         nonlocal last_partial_audio_bytes
         nonlocal last_partial_text
@@ -221,6 +202,7 @@ async def stt_stream(
         ]
 
         if len(rolling) < min_audio_bytes():
+
             return
 
         try:
@@ -235,8 +217,8 @@ async def stt_stream(
                     await _stream_transcribe_window(
                         client,
                         rolling,
-                        prompt=prompt,
-                        sample_rate=STREAM_SAMPLE_RATE,
+                        prompt=voice_config.prompt,
+                        sample_rate=voice_config.sample_rate,
                     )
                 )
 
@@ -283,15 +265,19 @@ async def stt_stream(
             )
 
     def maybe_start_partial_stt() -> None:
+
         nonlocal partial_task
 
-        if not stream_enabled:
+        if not voice_config.stream:
+
             return
 
         if partial_task is not None:
+
             return
 
         if len(audio_buffer) < min_audio_bytes():
+
             return
 
         if (
@@ -299,13 +285,14 @@ async def stt_stream(
             - last_partial_audio_bytes
             < partial_interval_bytes()
         ):
+
             return
 
         partial_task = asyncio.create_task(
             run_partial_stt()
         )
 
-        def _clear(
+        def clear_partial_task(
             task: asyncio.Task,
         ) -> None:
 
@@ -314,70 +301,103 @@ async def stt_stream(
             partial_task = None
 
             if task.cancelled():
+
                 return
 
             try:
+
                 task.result()
+
             except Exception:
+
                 logger.exception(
                     "Partial STT task crashed."
                 )
 
         partial_task.add_done_callback(
-            _clear
+            clear_partial_task
         )
 
     # ========================================================
-    # RUN END-TO-END PIPELINE
+    # END-TO-END PIPELINE
     # ========================================================
 
     async def run_pipeline() -> None:
-        """
-        Execute:
-
-            STT -> LLM -> TTS
-
-        using chat_pipeline.py.
-
-        Audio arriving from the client has already been
-        accumulated in audio_buffer.
-        """
-
-        nonlocal prompt
-
-        # ----------------------------------------------------
-        # Create a one-shot audio stream for the integrator.
-        # ----------------------------------------------------
 
         async def audio_source():
+
             if audio_buffer:
+
                 yield bytes(
                     audio_buffer
                 )
 
         config = VoicePipelineConfig(
-            stt_prompt=prompt,
 
-            # These will later come directly from the
-            # client's start message.
-            #
-            # Keep sane defaults for now.
-            system_prompt=None,
-            model=None,
-            temperature=0.7,
-            top_p=1.0,
-            max_tokens=None,
-            stop=None,
-            seed=None,
+            # ------------------------------------------------
+            # STT
+            # ------------------------------------------------
 
-            voice="jane",
-            tts_temperature=0.5,
+            stt_prompt=voice_config.prompt,
+
+            # ------------------------------------------------
+            # LLM
+            # ------------------------------------------------
+
+            system_prompt=(
+                voice_config.llm.system_prompt
+            ),
+
+            model=(
+                voice_config.llm.model
+            ),
+
+            temperature=(
+                voice_config.llm.temperature
+            ),
+
+            top_p=(
+                voice_config.llm.top_p
+            ),
+
+            max_tokens=(
+                voice_config.llm.max_tokens
+            ),
+
+            stop=(
+                voice_config.llm.stop
+            ),
+
+            seed=(
+                voice_config.llm.seed
+            ),
+
+            abstracted=(
+                voice_config.llm.abstracted
+            ),
+
+            # ------------------------------------------------
+            # TTS
+            # ------------------------------------------------
+
+            voice=(
+                voice_config.tts.voice
+            ),
+
+            tts_temperature=(
+                voice_config.tts.temperature
+            ),
         )
 
         async for event in voice_to_voice(
+
             audio_stream=audio_source(),
+
             config=config,
-            messages=None,
+
+            messages=list(
+                voice_config.llm.messages
+            ),
         ):
 
             # ------------------------------------------------
@@ -392,6 +412,7 @@ async def stt_stream(
                     audio,
                     bytes,
                 ):
+
                     continue
 
                 async with send_lock:
@@ -411,7 +432,7 @@ async def stt_stream(
             )
 
     # ========================================================
-    # INITIAL READY EVENT
+    # READY
     # ========================================================
 
     try:
@@ -421,20 +442,25 @@ async def stt_stream(
                 "type": "ready",
                 "protocol": "basket-voice-v1",
                 "transport": "websocket",
+
                 "audio_input": {
                     "encoding": "pcm_s16le",
-                    "sample_rate": STREAM_SAMPLE_RATE,
+                    "sample_rate": (
+                        STREAM_SAMPLE_RATE
+                    ),
                     "channels": 1,
                 },
+
                 "audio_output": {
                     "encoding": "pcm_s16le",
+                    "sample_rate": 24_000,
                     "channels": 1,
                 },
             }
         )
 
         # ====================================================
-        # MAIN EVENT LOOP
+        # MAIN LOOP
         # ====================================================
 
         while True:
@@ -451,7 +477,10 @@ async def stt_stream(
             ):
 
                 logger.info(
-                    "Voice WebSocket disconnected: client=%s",
+                    (
+                        "Voice WebSocket disconnected: "
+                        "client=%s"
+                    ),
                     websocket.client,
                 )
 
@@ -480,6 +509,7 @@ async def stt_stream(
                     continue
 
                 if not audio:
+
                     continue
 
                 audio_buffer.extend(
@@ -491,7 +521,7 @@ async def stt_stream(
                 continue
 
             # ------------------------------------------------
-            # CONTROL MESSAGE
+            # TEXT / JSON
             # ------------------------------------------------
 
             text = message.get(
@@ -503,7 +533,7 @@ async def stt_stream(
                 await send_error(
                     "invalid_message",
                     (
-                        "Expected JSON control "
+                        "Expected a JSON control "
                         "message or binary audio."
                     ),
                 )
@@ -567,14 +597,10 @@ async def stt_stream(
 
                 try:
 
-                    request = STTRequest(
-                        prompt=payload.get(
-                            "prompt"
-                        ),
-                        stream=payload.get(
-                            "stream",
-                            True,
-                        ),
+                    request = (
+                        VoiceStartRequest.model_validate(
+                            payload
+                        )
                     )
 
                 except Exception as exc:
@@ -586,15 +612,8 @@ async def stt_stream(
 
                     continue
 
-                requested_sample_rate = (
-                    payload.get(
-                        "sample_rate",
-                        STREAM_SAMPLE_RATE,
-                    )
-                )
-
                 if (
-                    requested_sample_rate
+                    request.sample_rate
                     != STREAM_SAMPLE_RATE
                 ):
 
@@ -609,34 +628,38 @@ async def stt_stream(
 
                     continue
 
-                # ------------------------------------------------
-                # Save session configuration.
-                # ------------------------------------------------
+                voice_config = request
 
                 started = True
-                stream_enabled = request.stream
-                prompt = request.prompt
 
                 audio_buffer.clear()
 
                 last_partial_audio_bytes = 0
+
                 last_partial_text = ""
 
                 logger.info(
                     (
                         "Voice stream started: "
-                        "client=%s stream=%s"
+                        "client=%s "
+                        "stream=%s "
+                        "model=%s "
+                        "voice=%s"
                     ),
                     websocket.client,
-                    stream_enabled,
+                    voice_config.stream,
+                    voice_config.llm.model,
+                    voice_config.tts.voice,
                 )
 
                 await send_json(
                     {
                         "type": "started",
-                        "stream": stream_enabled,
+                        "stream": (
+                            voice_config.stream
+                        ),
                         "sample_rate": (
-                            STREAM_SAMPLE_RATE
+                            voice_config.sample_rate
                         ),
                     }
                 )
@@ -664,7 +687,7 @@ async def stt_stream(
                 started = False
 
                 # ------------------------------------------------
-                # Wait for any rolling STT task.
+                # Finish pending partial STT
                 # ------------------------------------------------
 
                 if partial_task is not None:
@@ -681,8 +704,8 @@ async def stt_stream(
 
                         logger.exception(
                             (
-                                "Partial STT task failed "
-                                "during finalization."
+                                "Partial STT task "
+                                "failed during finalization."
                             )
                         )
 
@@ -691,17 +714,20 @@ async def stt_stream(
                 logger.info(
                     (
                         "Voice stream stopped: "
-                        "client=%s audio_seconds=%.2f"
+                        "client=%s "
+                        "audio_seconds=%.2f"
                     ),
                     websocket.client,
                     stream_audio_duration_seconds(
                         bytes(audio_buffer),
-                        sample_rate=STREAM_SAMPLE_RATE,
+                        sample_rate=(
+                            voice_config.sample_rate
+                        ),
                     ),
                 )
 
                 # ------------------------------------------------
-                # No audio.
+                # No audio
                 # ------------------------------------------------
 
                 if not audio_buffer:
@@ -713,7 +739,6 @@ async def stt_stream(
                         }
                     )
 
-                    prompt = None
                     continue
 
                 # ------------------------------------------------
@@ -744,15 +769,14 @@ async def stt_stream(
                     )
 
                 # ------------------------------------------------
-                # Reset session audio.
+                # Reset utterance state
                 # ------------------------------------------------
 
                 audio_buffer.clear()
 
                 last_partial_audio_bytes = 0
-                last_partial_text = ""
 
-                prompt = None
+                last_partial_text = ""
 
                 continue
 
@@ -781,12 +805,20 @@ async def stt_stream(
                     partial_task.cancel()
 
                     try:
+
                         await partial_task
+
                     except asyncio.CancelledError:
+
                         pass
+
                     except Exception:
+
                         logger.exception(
-                            "Partial task failed during cancellation."
+                            (
+                                "Partial STT task "
+                                "failed during cancellation."
+                            )
                         )
 
                     partial_task = None
@@ -796,9 +828,8 @@ async def stt_stream(
                 audio_buffer.clear()
 
                 last_partial_audio_bytes = 0
-                last_partial_text = ""
 
-                prompt = None
+                last_partial_text = ""
 
                 await send_json(
                     {
@@ -809,7 +840,7 @@ async def stt_stream(
                 continue
 
             # =================================================
-            # UNKNOWN COMMAND
+            # UNKNOWN
             # =================================================
 
             await send_error(
@@ -852,6 +883,7 @@ async def stt_stream(
             )
 
         except Exception:
+
             pass
 
     finally:
