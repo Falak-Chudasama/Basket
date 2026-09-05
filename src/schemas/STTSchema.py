@@ -10,3 +10,11 @@ class STTRequest(BaseModel):
             "and formatting."
         ),
     )
+
+    stream: bool = Field(
+        default=False,
+        description=(
+            "Enable realtime streaming transcription. For live microphone "
+            "streaming, use the WebSocket /stt/stream endpoint."
+        ),
+    )

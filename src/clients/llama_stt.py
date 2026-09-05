@@ -1,5 +1,7 @@
+import io
+import re
+import wave
 import httpx
-
 from fastapi import HTTPException, UploadFile
 
 from src.core.configs import (
@@ -27,6 +29,17 @@ STT_HEALTH_URL = (
 
 
 # ============================================================
+# STREAMING CONFIGURATION
+# ============================================================
+
+STREAM_SAMPLE_RATE = 16_000
+STREAM_SAMPLE_WIDTH = 2
+STREAM_WINDOW_SECONDS = 8.0
+STREAM_MIN_AUDIO_SECONDS = 1.5
+STREAM_PARTIAL_INTERVAL_SECONDS = 0.75
+
+
+# ============================================================
 # HTTP CONFIGURATION
 # ============================================================
 
@@ -42,6 +55,79 @@ def _timeout():
 # ============================================================
 # UTIL
 # ============================================================
+
+def _pcm16_to_wav(
+    pcm_bytes: bytes,
+    sample_rate: int = STREAM_SAMPLE_RATE,
+) -> bytes:
+    """Wrap raw mono PCM16 audio in an in-memory WAV container."""
+
+    if not pcm_bytes:
+        raise ValueError("PCM audio cannot be empty.")
+
+    buffer = io.BytesIO()
+
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(STREAM_SAMPLE_WIDTH)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
+
+    return buffer.getvalue()
+
+
+def _clean_transcription(text: str) -> str:
+    """
+    Normalize llama.cpp/Qwen3-ASR output before exposing it through Basket.
+
+    Some llama.cpp builds have returned Qwen control markers such as:
+    "language English<asr_text>...". Basket should expose only the
+    actual transcription to its clients.
+    """
+
+    text = (text or "").strip()
+
+    if not text:
+        return ""
+
+    # Remove everything through the ASR marker when present.
+    marker_match = re.search(r"<asr_text>", text, flags=re.IGNORECASE)
+    if marker_match:
+        text = text[marker_match.end():].strip()
+
+    # Fallback for language-prefix output if the marker is absent.
+    text = re.sub(
+        r"^language\s+[A-Za-z][A-Za-z ._-]*\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    return text
+
+
+def _extract_text(payload) -> str:
+    """Extract transcript text from llama.cpp's JSON response."""
+
+    if isinstance(payload, dict):
+        value = payload.get("text")
+        if isinstance(value, str):
+            return _clean_transcription(value)
+
+        # Be tolerant of compatible OpenAI-style payloads.
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+            if isinstance(first, dict):
+                text = first.get("text")
+                if isinstance(text, str):
+                    return _clean_transcription(text)
+
+    if isinstance(payload, str):
+        return _clean_transcription(payload)
+
+    return ""
+
 
 async def _health():
     try:
@@ -81,6 +167,7 @@ async def _health():
 # ============================================================
 # MODEL
 # ============================================================
+
 
 async def _load_model():
     """
@@ -173,26 +260,31 @@ async def _model_status():
 
 
 # ============================================================
-# TRANSCRIPTION
+# TRANSCRIPTION HELPERS
 # ============================================================
 
-async def _transcribe(
-    file: UploadFile,
+
+async def _transcribe_bytes(
+    client: httpx.AsyncClient,
+    audio_bytes: bytes,
+    *,
+    filename: str = "audio.wav",
+    content_type: str = "audio/wav",
     prompt: str | None = None,
-):
-    audio_bytes = await file.read()
+) -> dict:
+    """Transcribe an in-memory audio payload through llama.cpp."""
 
     if not audio_bytes:
         raise HTTPException(
             status_code=400,
-            detail="Audio file is empty.",
+            detail="Audio data is empty.",
         )
 
     files = {
         "file": (
-            file.filename or "audio.wav",
+            filename,
             audio_bytes,
-            file.content_type or "application/octet-stream",
+            content_type,
         )
     }
 
@@ -206,19 +298,25 @@ async def _transcribe(
         data["prompt"] = prompt
 
     try:
-        async with httpx.AsyncClient(
-            timeout=_timeout()
-        ) as client:
-
-            response = await client.post(
-                STT_TRANSCRIBE_URL,
-                files=files,
-                data=data,
-            )
+        response = await client.post(
+            STT_TRANSCRIBE_URL,
+            files=files,
+            data=data,
+        )
 
         response.raise_for_status()
 
-        return response.json()
+        payload = response.json()
+        text = _extract_text(payload)
+
+        # Preserve the backend response shape while ensuring the returned
+        # transcript is clean for Basket consumers.
+        if isinstance(payload, dict):
+            result = dict(payload)
+            result["text"] = text
+            return result
+
+        return {"text": text}
 
     except httpx.HTTPStatusError as exc:
 
@@ -240,3 +338,94 @@ async def _transcribe(
                 f"{exc}"
             ),
         )
+
+
+# ============================================================
+# TRANSCRIPTION
+# ============================================================
+
+
+async def _transcribe(
+    file: UploadFile,
+    prompt: str | None = None,
+):
+    audio_bytes = await file.read()
+
+    if not audio_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail="Audio file is empty.",
+        )
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=_timeout()
+        ) as client:
+            return await _transcribe_bytes(
+                client,
+                audio_bytes,
+                filename=file.filename or "audio.wav",
+                content_type=file.content_type or "application/octet-stream",
+                prompt=prompt,
+            )
+
+    except HTTPException:
+        raise
+
+
+# ============================================================
+# STREAMING AUDIO HELPERS
+# ============================================================
+
+
+def stream_audio_duration_seconds(
+    audio_bytes: bytes,
+    sample_rate: int = STREAM_SAMPLE_RATE,
+) -> float:
+    """Return the duration of mono PCM16 bytes."""
+
+    bytes_per_second = sample_rate * STREAM_SAMPLE_WIDTH
+    if bytes_per_second <= 0:
+        return 0.0
+
+    return len(audio_bytes) / bytes_per_second
+
+
+def make_stream_wav(
+    pcm_bytes: bytes,
+    sample_rate: int = STREAM_SAMPLE_RATE,
+) -> bytes:
+    """Public helper used by Basket's WebSocket STT transport."""
+
+    return _pcm16_to_wav(
+        pcm_bytes,
+        sample_rate=sample_rate,
+    )
+
+
+async def _stream_transcribe_window(
+    client: httpx.AsyncClient,
+    pcm_bytes: bytes,
+    *,
+    prompt: str | None = None,
+    sample_rate: int = STREAM_SAMPLE_RATE,
+) -> dict:
+    """
+    Transcribe one rolling PCM16 window.
+
+    This is intentionally stateless: llama.cpp receives a fresh WAV for
+    each partial update. The WebSocket layer owns the rolling context.
+    """
+
+    wav_bytes = _pcm16_to_wav(
+        pcm_bytes,
+        sample_rate=sample_rate,
+    )
+
+    return await _transcribe_bytes(
+        client,
+        wav_bytes,
+        filename="stream.wav",
+        content_type="audio/wav",
+        prompt=prompt,
+    )
