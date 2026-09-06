@@ -5,3 +5,5 @@ python-multipart
 pydantic
 python-dotenv
 openai
+sentence-transformers
+chromadb

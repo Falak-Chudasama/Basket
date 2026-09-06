@@ -57,3 +57,8 @@ class VoiceStartRequest(BaseModel):
     tts: VoiceTTSConfig = Field(
         default_factory=VoiceTTSConfig
     )
+
+    application: str = Field(
+        min_length=1,
+        description="Application identifier for namespace isolation.",
+    )

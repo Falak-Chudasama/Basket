@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Final
+from typing import Any, Final
 
 from fastapi import (
     APIRouter,
@@ -24,7 +24,7 @@ from src.clients.llama_stt import (
     stream_audio_duration_seconds,
 )
 from src.schemas.VoiceSchema import VoiceStartRequest
-from src.services.chat_pipeline import (
+from src.services.chat.chat_pipeline import (
     PipelineEvent,
     VoicePipelineConfig,
     voice_to_voice,
@@ -42,7 +42,7 @@ WS_PATH: Final[str] = "/ws"
 # ============================================================
 
 
-def _json_event(event: PipelineEvent) -> dict:
+def _json_event(event: PipelineEvent) -> dict[str, Any]:
     """
     Convert an internal pipeline event into a JSON-safe event.
 
@@ -70,15 +70,15 @@ async def stt_stream(
 
     Client -> Server:
 
-        {"type":"start", ...}
+        {"type":"start", "application":"quince", ...}
         <binary PCM16 mono 16 kHz frames>
         ...
-        {"type":"stop"}
+        {"type":"stop", "application":"quince"}
 
     Optional:
 
-        {"type":"cancel"}
-        {"type":"ping"}
+        {"type":"cancel", "application":"quince"}
+        {"type":"ping", "application":"quince"}
 
     The WebSocket transports data and delegates the actual
     STT -> LLM -> TTS pipeline to chat_pipeline.py.
@@ -103,7 +103,12 @@ async def stt_stream(
 
     started = False
 
-    voice_config = VoiceStartRequest()
+    # Application identity belongs to the WebSocket session.
+    # It is established by the first valid start message.
+    application: str | None = None
+
+    # Voice configuration belongs to the current voice turn.
+    voice_config: VoiceStartRequest | None = None
 
     # --------------------------------------------------------
     # AUDIO STATE
@@ -127,9 +132,23 @@ async def stt_stream(
 
     send_lock = asyncio.Lock()
 
+    def require_voice_config() -> VoiceStartRequest:
+        if voice_config is None:
+            raise RuntimeError(
+                "Voice stream has not been started."
+            )
+
+        return voice_config
+
     async def send_json(
-        payload: dict,
+        payload: dict[str, Any],
     ) -> None:
+
+        if application is not None:
+            payload = {
+                "application": application,
+                **payload,
+            }
 
         logger.debug(
             "WS -> JSON: %s",
@@ -137,10 +156,7 @@ async def stt_stream(
         )
 
         async with send_lock:
-
-            await websocket.send_json(
-                payload
-            )
+            await websocket.send_json(payload)
 
     async def send_error(
         code: str,
@@ -167,25 +183,31 @@ async def stt_stream(
 
     def window_bytes() -> int:
 
+        config = require_voice_config()
+
         return int(
             STREAM_WINDOW_SECONDS
-            * voice_config.sample_rate
+            * config.sample_rate
             * STREAM_SAMPLE_WIDTH
         )
 
     def min_audio_bytes() -> int:
 
+        config = require_voice_config()
+
         return int(
             STREAM_MIN_AUDIO_SECONDS
-            * voice_config.sample_rate
+            * config.sample_rate
             * STREAM_SAMPLE_WIDTH
         )
 
     def partial_interval_bytes() -> int:
 
+        config = require_voice_config()
+
         return int(
             STREAM_PARTIAL_INTERVAL_SECONDS
-            * voice_config.sample_rate
+            * config.sample_rate
             * STREAM_SAMPLE_WIDTH
         )
 
@@ -197,6 +219,8 @@ async def stt_stream(
 
         nonlocal last_partial_audio_bytes
         nonlocal last_partial_text
+
+        config = require_voice_config()
 
         partial_started_at = time.perf_counter()
 
@@ -242,7 +266,7 @@ async def stt_stream(
                     await _stream_transcribe_window(
                         client,
                         rolling,
-                        prompt=voice_config.prompt,
+                        prompt=config.prompt,
                         sample_rate=STREAM_SAMPLE_RATE,
                     )
                 )
@@ -315,7 +339,9 @@ async def stt_stream(
 
         nonlocal partial_task
 
-        if not voice_config.stream:
+        config = require_voice_config()
+
+        if not config.stream:
             return
 
         if partial_task is not None:
@@ -371,6 +397,8 @@ async def stt_stream(
 
     async def run_pipeline() -> None:
 
+        config_request = require_voice_config()
+
         pipeline_started_at = time.perf_counter()
 
         logger.info(
@@ -378,6 +406,10 @@ async def stt_stream(
         )
         logger.info(
             "WS PIPELINE: ENTER"
+        )
+        logger.info(
+            "WS PIPELINE: application=%r",
+            application,
         )
         logger.info(
             "WS PIPELINE: audio_bytes=%d duration=%.3fs",
@@ -390,39 +422,39 @@ async def stt_stream(
 
         logger.info(
             "WS PIPELINE: STT prompt=%r",
-            voice_config.prompt,
+            config_request.prompt,
         )
 
         logger.info(
             "WS PIPELINE: LLM model=%r",
-            voice_config.llm.model,
+            config_request.llm.model,
         )
 
         logger.info(
             "WS PIPELINE: LLM temperature=%r top_p=%r "
             "max_tokens=%r stop=%r seed=%r",
-            voice_config.llm.temperature,
-            voice_config.llm.top_p,
-            voice_config.llm.max_tokens,
-            voice_config.llm.stop,
-            voice_config.llm.seed,
+            config_request.llm.temperature,
+            config_request.llm.top_p,
+            config_request.llm.max_tokens,
+            config_request.llm.stop,
+            config_request.llm.seed,
         )
 
         logger.info(
             "WS PIPELINE: LLM system_prompt=%r",
-            voice_config.llm.system_prompt,
+            config_request.llm.system_prompt,
         )
 
         logger.info(
             "WS PIPELINE: LLM messages=%d abstracted=%r",
-            len(voice_config.llm.messages),
-            voice_config.llm.abstracted,
+            len(config_request.llm.messages),
+            config_request.llm.abstracted,
         )
 
         logger.info(
             "WS PIPELINE: TTS voice=%r temperature=%r",
-            voice_config.tts.voice,
-            voice_config.tts.temperature,
+            config_request.tts.voice,
+            config_request.tts.temperature,
         )
 
         async def audio_source():
@@ -438,48 +470,48 @@ async def stt_stream(
                     audio_buffer
                 )
 
-        config = VoicePipelineConfig(
+        pipeline_config = VoicePipelineConfig(
 
             # ------------------------------------------------
             # STT
             # ------------------------------------------------
 
-            stt_prompt=voice_config.prompt,
+            stt_prompt=config_request.prompt,
 
             # ------------------------------------------------
             # LLM
             # ------------------------------------------------
 
             system_prompt=(
-                voice_config.llm.system_prompt
+                config_request.llm.system_prompt
             ),
 
             model=(
-                voice_config.llm.model
+                config_request.llm.model
             ),
 
             temperature=(
-                voice_config.llm.temperature
+                config_request.llm.temperature
             ),
 
             top_p=(
-                voice_config.llm.top_p
+                config_request.llm.top_p
             ),
 
             max_tokens=(
-                voice_config.llm.max_tokens
+                config_request.llm.max_tokens
             ),
 
             stop=(
-                voice_config.llm.stop
+                config_request.llm.stop
             ),
 
             seed=(
-                voice_config.llm.seed
+                config_request.llm.seed
             ),
 
             abstracted=(
-                voice_config.llm.abstracted
+                config_request.llm.abstracted
             ),
 
             # ------------------------------------------------
@@ -487,11 +519,11 @@ async def stt_stream(
             # ------------------------------------------------
 
             voice=(
-                voice_config.tts.voice
+                config_request.tts.voice
             ),
 
             tts_temperature=(
-                voice_config.tts.temperature
+                config_request.tts.temperature
             ),
         )
 
@@ -513,10 +545,10 @@ async def stt_stream(
 
                 audio_stream=audio_source(),
 
-                config=config,
+                config=pipeline_config,
 
                 messages=list(
-                    voice_config.llm.messages
+                    config_request.llm.messages
                 ),
 
             ):
@@ -547,6 +579,9 @@ async def stt_stream(
                             "TTS audio event contained an empty chunk."
                         )
                         continue
+
+                    tts_audio_chunks += 1
+                    tts_audio_bytes += len(audio)
 
                     logger.info(
                         "Sending TTS audio to client: %d bytes",
@@ -749,7 +784,7 @@ async def stt_stream(
                     text
                 )
 
-            except json.JSONDecodeError as exc:
+            except json.JSONDecodeError:
 
                 logger.exception(
                     "WS JSON DECODE FAILED"
@@ -876,6 +911,39 @@ async def stt_stream(
 
                     continue
 
+                # ------------------------------------------------
+                # APPLICATION IDENTITY
+                # ------------------------------------------------
+
+                if (
+                    application is not None
+                    and request.application != application
+                ):
+
+                    logger.error(
+                        "START rejected: application mismatch "
+                        "existing=%r requested=%r",
+                        application,
+                        request.application,
+                    )
+
+                    await send_error(
+                        "application_mismatch",
+                        (
+                            "Application cannot change "
+                            "during a WebSocket connection."
+                        ),
+                    )
+
+                    continue
+
+                if application is None:
+                    application = request.application
+
+                # ------------------------------------------------
+                # ACCEPT START
+                # ------------------------------------------------
+
                 voice_config = request
 
                 started = True
@@ -893,7 +961,17 @@ async def stt_stream(
                 )
 
                 logger.info(
+                    "APPLICATION: %r",
+                    application,
+                )
+
+                logger.info(
                     "VOICE CONFIG:"
+                )
+
+                logger.info(
+                    "  application=%r",
+                    voice_config.application,
                 )
 
                 logger.info(
@@ -1149,7 +1227,7 @@ async def stt_stream(
                     )
 
                 # ------------------------------------------------
-                # RESET
+                # RESET TURN STATE
                 # ------------------------------------------------
 
                 logger.info(
@@ -1273,6 +1351,11 @@ async def stt_stream(
         )
 
         logger.info(
+            "application=%r",
+            application,
+        )
+
+        logger.info(
             "=================================================="
         )
 
@@ -1307,6 +1390,7 @@ async def stt_stream(
             partial_task.cancel()
 
         logger.info(
-            "VOICE WS SESSION CLOSED: client=%s",
+            "VOICE WS SESSION CLOSED: client=%s application=%r",
             websocket.client,
+            application,
         )
