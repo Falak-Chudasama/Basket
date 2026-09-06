@@ -19,6 +19,7 @@ REM      LM Studio   → 127.0.0.1:%LLM_PORT%
 REM      Qwen3-ASR   → 127.0.0.1:%STT_PORT%
 REM      Pocket TTS  → 127.0.0.1:%TTS_PORT%
 REM      SearXNG     → 127.0.0.1:%SEARXNG_PORT%
+REM      MongoDB     → 127.0.0.1:%BASKET_DB_PORT%
 REM
 REM ============================================================
 
@@ -49,17 +50,47 @@ REM ============================================================
 
 echo [2/7] Starting SearXNG...
 echo.
-echo       Host : %HOST%
+echo       Root : %SEARXNG_ROOT%
 echo       Port : %SEARXNG_PORT%
 echo.
 
+
 REM ------------------------------------------------------------
-REM Replace the following command with your existing SearXNG
-REM startup command if your installation uses Docker, WSL,
-REM a virtual environment, or another launcher.
+REM  Check Docker engine
 REM ------------------------------------------------------------
 
-start "Basket - SearXNG" cmd /k "cd /d "%SEARXNG_ROOT%" && searxng --host %HOST% --port %SEARXNG_PORT%"
+docker info >nul 2>&1
+
+if errorlevel 1 (
+    echo       Docker engine is not running.
+    echo       Starting Docker Desktop in background...
+    echo.
+
+    docker desktop start -d
+
+    echo       Waiting for Docker engine...
+)
+
+
+:WAIT_DOCKER
+docker info >nul 2>&1
+
+if errorlevel 1 (
+    timeout /t 2 /nobreak >nul
+    goto WAIT_DOCKER
+)
+
+echo       Docker engine is ready.
+echo.
+
+
+REM ------------------------------------------------------------
+REM  Start SearXNG
+REM ------------------------------------------------------------
+
+echo       Starting SearXNG containers...
+
+start "Basket - SearXNG" /D "%SEARXNG_ROOT%" cmd /k "docker compose up"
 
 timeout /t 2 /nobreak >nul
 
@@ -76,7 +107,7 @@ echo       Port    : %STT_PORT%
 echo       Device  : CPU ONLY
 echo.
 
-start "Basket - STT" cmd /k "llama-server.exe -m "%ASR_MODEL%" --mmproj "%ASR_MMPROJ%" --host %HOST% --port %STT_PORT% -ngl 0 --mmproj-device none -c 4096"
+start "Basket - STT" cmd /k ""llama-server.exe" -m "%ASR_MODEL%" --mmproj "%ASR_MMPROJ%" --host %HOST% --port %STT_PORT% -ngl 0 --mmproj-device none -c 4096"
 
 timeout /t 2 /nobreak >nul
 
@@ -108,36 +139,56 @@ echo       Port   : %TTS_PORT%
 echo       Device : CPU ONLY
 echo.
 
-start "Basket - Pocket TTS" cmd /k "cd /d "%POCKET_TTS_ROOT%" && call .venv\Scripts\activate.bat && pocket-tts serve --host %HOST% --port %TTS_PORT%"
+start "Basket - Pocket TTS" /D "%POCKET_TTS_ROOT%" cmd /k "call .venv\Scripts\activate.bat && pocket-tts serve --host %HOST% --port %TTS_PORT%"
 
 timeout /t 2 /nobreak >nul
 
 
 REM ============================================================
-REM  [6/7] BASKET API
+REM  [6/7] MONGODB
 REM ============================================================
 
-echo [6/7] Starting Basket API...
+echo [6/7] Starting Basket Database...
+echo.
+echo       Path : %MONGODB_PATH%
+echo       Host : %HOST%
+echo       Port : %BASKET_DB_PORT%
+echo.
+
+
+REM ------------------------------------------------------------
+REM  Start MongoDB
+REM ------------------------------------------------------------
+
+start "Basket - MongoDB" /D "%MONGODB_PATH%" cmd /k "mongod --port %BASKET_DB_PORT% --dbpath ."
+
+echo       Waiting for MongoDB...
+
+
+:WAIT_MONGODB
+powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName '%HOST%' -Port %BASKET_DB_PORT% -WarningAction SilentlyContinue; if ($t.TcpTestSucceeded) { exit 0 } else { exit 1 }" >nul 2>&1
+
+if errorlevel 1 (
+    timeout /t 1 /nobreak >nul
+    goto WAIT_MONGODB
+)
+
+echo       MongoDB is ready.
+echo.
+
+
+REM ============================================================
+REM  [7/7] BASKET API
+REM ============================================================
+
+echo [7/7] Starting Basket API...
 echo.
 echo       Root : %BASKET_ROOT%
 echo       Host : %HOST%
 echo       Port : %BASKET_PORT%
 echo.
 
-start "Basket - API" cmd /k "cd /d "%BASKET_ROOT%" && call .venv\Scripts\activate.bat && python run.py"
-
-
-REM ============================================================
-REM  [7/7] Basket MongoDB
-REM ============================================================
-
-echo [7/7] Starting Basket Database...
-echo.
-echo       Path : %MONGODB_PATH%
-echo       Port : %BASKET_DB_PORT%
-echo.
-
-start "Basket - MongoDB" cmd /k "mongod --port %BASKET_DB_PORT% --dbpath C:\project-data\basket"
+start "Basket - API" /D "%BASKET_ROOT%" cmd /k "call .venv\Scripts\activate.bat && python run.py"
 
 
 REM ============================================================
@@ -164,6 +215,7 @@ echo      LM Studio   : http://%HOST%:%LLM_PORT%
 echo      STT         : http://%HOST%:%STT_PORT%
 echo      TTS         : http://%HOST%:%TTS_PORT%
 echo      SearXNG     : http://%HOST%:%SEARXNG_PORT%
+echo      MongoDB     : mongodb://%HOST%:%BASKET_DB_PORT%
 
 echo.
 echo ============================================================

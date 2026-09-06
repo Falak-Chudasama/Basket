@@ -3,8 +3,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "")
-RERANKER_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "")
+MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:7005/")
+BASKET_DB: str = os.getenv("BASKET_DB", "basket")
+
+EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
+RERANKER_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "jinaai/jina-reranker-v3.5")
 
 BASKET_HOST = os.getenv("BASKET_HOST", "127.0.0.1")
 BASKET_PORT = int(os.getenv("BASKET_PORT", "7000"))

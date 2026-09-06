@@ -10,7 +10,6 @@ from src.jobs.jobs import run_jobs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("running jobs")
     await run_jobs()
     yield
 
