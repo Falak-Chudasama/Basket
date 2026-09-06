@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import struct
 from typing import AsyncIterator
+
 import httpx
 from fastapi import HTTPException
 from fastapi.responses import Response, StreamingResponse
@@ -42,7 +45,7 @@ def _timeout():
 
 
 # ============================================================
-# UTIL
+# HEALTH
 # ============================================================
 
 async def _health():
@@ -67,7 +70,7 @@ async def _health():
                 "Pocket TTS health check failed: "
                 f"{exc.response.status_code}"
             ),
-        )
+        ) from exc
 
     except httpx.RequestError as exc:
 
@@ -77,7 +80,7 @@ async def _health():
                 "Could not connect to Pocket TTS: "
                 f"{exc}"
             ),
-        )
+        ) from exc
 
 
 # ============================================================
@@ -111,7 +114,7 @@ async def _load_model():
                 "Pocket TTS service is not healthy: "
                 f"{exc.response.status_code}"
             ),
-        )
+        ) from exc
 
     except httpx.RequestError as exc:
 
@@ -121,8 +124,12 @@ async def _load_model():
                 "Pocket TTS service is not running: "
                 f"{exc}"
             ),
-        )
+        ) from exc
 
+
+# ============================================================
+# MODEL STATUS
+# ============================================================
 
 async def _model_status():
     try:
@@ -162,11 +169,14 @@ async def _model_status():
             "error": str(exc),
         }
 
+
 # ============================================================
 # TEXT TO SPEECH
 # ============================================================
 
-async def _synthesize(request: TTSRequest):
+async def _synthesize(
+    request: TTSRequest,
+):
     text = request.text.strip()
 
     if not text:
@@ -178,13 +188,20 @@ async def _synthesize(request: TTSRequest):
     form_data = {
         "text": text,
         "voice_url": request.voice,
-        "temperature": str(request.temperature),
+        "temperature": str(
+            request.temperature
+        ),
     }
+
+    # --------------------------------------------------------
+    # STREAMING
+    # --------------------------------------------------------
 
     if request.stream:
 
         async def audio_stream():
             try:
+
                 async with httpx.AsyncClient(
                     timeout=_timeout()
                 ) as client:
@@ -193,11 +210,17 @@ async def _synthesize(request: TTSRequest):
                         "POST",
                         POCKET_TTS_TTS_URL,
                         data=form_data,
+                        headers={
+                            "Accept": "audio/wav",
+                        },
                     ) as response:
 
                         response.raise_for_status()
 
-                        async for chunk in response.aiter_bytes():
+                        async for chunk in (
+                            response.aiter_bytes()
+                        ):
+
                             if chunk:
                                 yield chunk
 
@@ -210,7 +233,7 @@ async def _synthesize(request: TTSRequest):
                         f"{exc.response.status_code}: "
                         f"{exc.response.text}"
                     ),
-                )
+                ) from exc
 
             except httpx.RequestError as exc:
 
@@ -220,7 +243,7 @@ async def _synthesize(request: TTSRequest):
                         "Could not connect to Pocket TTS: "
                         f"{exc}"
                     ),
-                )
+                ) from exc
 
         return StreamingResponse(
             audio_stream(),
@@ -237,6 +260,7 @@ async def _synthesize(request: TTSRequest):
     # --------------------------------------------------------
 
     try:
+
         async with httpx.AsyncClient(
             timeout=_timeout()
         ) as client:
@@ -244,6 +268,9 @@ async def _synthesize(request: TTSRequest):
             response = await client.post(
                 POCKET_TTS_TTS_URL,
                 data=form_data,
+                headers={
+                    "Accept": "audio/wav",
+                },
             )
 
         response.raise_for_status()
@@ -267,7 +294,7 @@ async def _synthesize(request: TTSRequest):
                 f"{exc.response.status_code}: "
                 f"{exc.response.text}"
             ),
-        )
+        ) from exc
 
     except httpx.RequestError as exc:
 
@@ -277,38 +304,37 @@ async def _synthesize(request: TTSRequest):
                 "Could not connect to Pocket TTS: "
                 f"{exc}"
             ),
-        )
+        ) from exc
+
 
 # ============================================================
-# REALTIME TTS - RAW PCM STREAM
+# REALTIME TTS - STREAMING WAV -> RAW PCM
 # ============================================================
-
-# Pocket TTS currently streams 16-bit mono PCM inside a WAV
-# container. Basket strips the WAV container and exposes the
-# underlying PCM stream to the realtime pipeline.
-#
-# Current Pocket TTS model output is typically 24 kHz.
-# The actual sample rate is read from the WAV header so the
-# adapter does not blindly depend on that assumption.
-# ============================================================
-
 
 class _StreamingWAVParser:
     """
-    Incrementally removes the WAV container from a streamed
-    Pocket TTS response and yields raw PCM bytes.
+    Incrementally parse a streamed RIFF/WAVE response.
 
-    The parser waits until it has enough data to locate the
-    RIFF/WAVE data chunk. Once the data chunk begins, every
-    subsequent byte is treated as PCM audio.
+    Important:
+    We do NOT wait for the entire WAV data chunk.
+
+    Once the `data` chunk header is found, all bytes following
+    that header are immediately treated as PCM audio.
+
+    This is necessary for realtime TTS streaming.
     """
 
     def __init__(self):
         self._buffer = bytearray()
+
+        self._header_parsed = False
         self._audio_started = False
+
         self.sample_rate: int | None = None
         self.channels: int | None = None
         self.sample_width: int | None = None
+
+        self._offset = 12
 
     def feed(
         self,
@@ -318,51 +344,57 @@ class _StreamingWAVParser:
         if not chunk:
             return b""
 
+        # ----------------------------------------------------
+        # Once the data section has started, every incoming
+        # network chunk is raw PCM.
+        # ----------------------------------------------------
+
         if self._audio_started:
-            return chunk
+            return bytes(chunk)
 
         self._buffer.extend(chunk)
 
-        data_offset = self._find_data_offset()
+        audio = self._try_parse_header()
 
-        if data_offset is None:
+        if audio is None:
             return b""
-
-        audio = bytes(
-            self._buffer[data_offset:]
-        )
-
-        self._buffer.clear()
-        self._audio_started = True
 
         return audio
 
-    def _find_data_offset(self) -> int | None:
-        """
-        Parse a RIFF/WAVE stream.
-
-        Returns the byte offset where the 'data' chunk payload
-        begins.
-        """
-
+    def _try_parse_header(self) -> bytes | None:
         data = self._buffer
+
+        # ----------------------------------------------------
+        # RIFF header
+        # ----------------------------------------------------
 
         if len(data) < 12:
             return None
 
         if data[0:4] != b"RIFF":
             raise ValueError(
-                "Pocket TTS did not return a RIFF/WAVE stream."
+                "Pocket TTS did not return a RIFF stream."
             )
 
         if data[8:12] != b"WAVE":
             raise ValueError(
-                "Pocket TTS returned an unsupported WAV container."
+                "Pocket TTS returned a non-WAVE RIFF stream."
             )
 
-        offset = 12
+        # ----------------------------------------------------
+        # Walk RIFF chunks.
+        #
+        # We only require the complete header of each chunk.
+        # We DO NOT wait for the complete data payload.
+        # ----------------------------------------------------
 
-        while len(data) >= offset + 8:
+        offset = self._offset
+
+        while True:
+
+            # Need chunk id + chunk size.
+            if len(data) < offset + 8:
+                return None
 
             chunk_id = bytes(
                 data[offset:offset + 4]
@@ -375,13 +407,6 @@ class _StreamingWAVParser:
             )[0]
 
             chunk_data_start = offset + 8
-            chunk_data_end = (
-                chunk_data_start + chunk_size
-            )
-
-            # We do not have the complete chunk yet.
-            if len(data) < chunk_data_end:
-                return None
 
             # ------------------------------------------------
             # FORMAT CHUNK
@@ -389,10 +414,14 @@ class _StreamingWAVParser:
 
             if chunk_id == b"fmt ":
 
+                # Standard PCM fmt chunk requires 16 bytes.
                 if chunk_size < 16:
                     raise ValueError(
                         "Invalid WAV fmt chunk."
                     )
+
+                if len(data) < chunk_data_start + 16:
+                    return None
 
                 audio_format = struct.unpack_from(
                     "<H",
@@ -412,35 +441,51 @@ class _StreamingWAVParser:
                     chunk_data_start + 4,
                 )[0]
 
+                bits_per_sample = struct.unpack_from(
+                    "<H",
+                    data,
+                    chunk_data_start + 14,
+                )[0]
+
                 self.sample_width = (
-                    struct.unpack_from(
-                        "<H",
-                        data,
-                        chunk_data_start + 14,
-                    )[0]
-                    // 8
+                    bits_per_sample // 8
                 )
 
                 if audio_format != 1:
                     raise ValueError(
-                        "Pocket TTS returned non-PCM WAV audio."
+                        "Pocket TTS returned "
+                        "non-PCM WAV audio."
                     )
 
                 if self.channels != 1:
                     raise ValueError(
-                        "Pocket TTS realtime audio must be mono."
+                        "Pocket TTS realtime audio "
+                        "must be mono."
                     )
 
                 if self.sample_width != 2:
                     raise ValueError(
-                        "Pocket TTS realtime audio must be 16-bit PCM."
+                        "Pocket TTS realtime audio "
+                        "must be 16-bit PCM."
                     )
+
+                # Advance to next RIFF chunk.
+                offset = (
+                    chunk_data_start
+                    + chunk_size
+                )
+
+                if offset % 2:
+                    offset += 1
+
+                self._offset = offset
+                continue
 
             # ------------------------------------------------
             # DATA CHUNK
             # ------------------------------------------------
 
-            elif chunk_id == b"data":
+            if chunk_id == b"data":
 
                 if (
                     self.sample_rate is None
@@ -448,19 +493,51 @@ class _StreamingWAVParser:
                     or self.sample_width is None
                 ):
                     raise ValueError(
-                        "WAV data chunk appeared before fmt chunk."
+                        "WAV data chunk appeared "
+                        "before fmt chunk."
                     )
 
-                return chunk_data_start
+                # We have found the audio payload.
+                #
+                # CRITICAL:
+                # Do NOT check whether the entire declared
+                # data chunk has arrived.
+                #
 
-            # RIFF chunks are word aligned.
-            offset = chunk_data_end
+                available = bytes(
+                    data[chunk_data_start:]
+                )
 
-            if offset % 2:
-                offset += 1
+                self._buffer.clear()
+                self._audio_started = True
+                self._header_parsed = True
 
-        return None
+                return available
 
+            # ------------------------------------------------
+            # OTHER RIFF CHUNKS
+            # ------------------------------------------------
+
+            next_offset = (
+                chunk_data_start
+                + chunk_size
+            )
+
+            if next_offset % 2:
+                next_offset += 1
+
+            # We need the complete unknown chunk before we
+            # can safely skip over it.
+            if len(data) < next_offset:
+                return None
+
+            offset = next_offset
+            self._offset = offset
+
+
+# ============================================================
+# STREAM RAW PCM TO REALTIME PIPELINE
+# ============================================================
 
 async def stream_tts_pcm(
     *,
@@ -471,16 +548,14 @@ async def stream_tts_pcm(
     """
     Stream Pocket TTS as raw PCM16 mono audio.
 
-    The upstream Pocket TTS server currently sends a streaming
-    WAV container. Basket removes the WAV container and yields
-    only its PCM payload.
+    Upstream:
+        Pocket TTS -> WAV stream
 
-    Audio format:
+    Basket:
+        WAV container -> raw PCM
 
-        PCM
-        signed 16-bit
-        mono
-        sample rate read from WAV header
+    Downstream:
+        raw PCM -> Quince WebSocket
     """
 
     text = text.strip()
@@ -518,7 +593,9 @@ async def stream_tts_pcm(
 
                 response.raise_for_status()
 
-                async for chunk in response.aiter_bytes():
+                async for chunk in (
+                    response.aiter_bytes()
+                ):
 
                     if not chunk:
                         continue
@@ -540,6 +617,13 @@ async def stream_tts_pcm(
                         ) from exc
 
                     if pcm:
+
+                        # Explicitly normalize to bytes.
+                        #
+                        # This guarantees that PipelineEvent.data
+                        # is exactly the type expected by ws.py.
+                        pcm = bytes(pcm)
+
                         yield pcm
 
     except httpx.HTTPStatusError as exc:
@@ -551,7 +635,7 @@ async def stream_tts_pcm(
                 f"{exc.response.status_code}: "
                 f"{exc.response.text}"
             ),
-        )
+        ) from exc
 
     except httpx.RequestError as exc:
 
@@ -561,4 +645,4 @@ async def stream_tts_pcm(
                 "Could not connect to Pocket TTS: "
                 f"{exc}"
             ),
-        )
+        ) from exc

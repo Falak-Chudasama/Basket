@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import time
 import wave
 from dataclasses import dataclass
 from typing import AsyncIterable, AsyncIterator
@@ -28,11 +29,6 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ============================================================
 
-# Basket's realtime audio contract.
-#
-# Pocket TTS currently emits mono 16-bit PCM and typically
-# operates at 24 kHz. The stream_tts_pcm adapter validates the
-# incoming WAV format before exposing PCM to this service.
 REALTIME_TTS_SAMPLE_RATE = 24_000
 REALTIME_TTS_CHANNELS = 1
 REALTIME_TTS_SAMPLE_WIDTH = 2
@@ -46,8 +42,7 @@ REALTIME_TTS_SAMPLE_WIDTH = 2
 @dataclass(slots=True)
 class VoicePipelineConfig:
     """
-    Client-supplied configuration for Basket's
-    voice orchestration pipeline.
+    Configuration supplied to the voice orchestration pipeline.
     """
 
     # --------------------------------------------------------
@@ -87,11 +82,10 @@ class VoicePipelineConfig:
 @dataclass(slots=True)
 class PipelineEvent:
     """
-    Normalized internal event.
+    Normalized internal pipeline event.
 
-    The WebSocket layer decides how these events are serialized.
-    The service does not know or care whether the caller is
-    Quince, Kiwi, another fruit, or an HTTP endpoint.
+    The WebSocket layer determines how these events are
+    transported to Quince.
     """
 
     type: str
@@ -105,11 +99,7 @@ class PipelineEvent:
 
 class TextChunker:
     """
-    Converts an LLM token stream into TTS-sized phrases.
-
-    Punctuation is preferred, but the chunker also prevents
-    indefinite waiting when an LLM produces a long sentence
-    without punctuation.
+    Converts streamed LLM tokens into TTS-sized phrases.
     """
 
     HARD_BOUNDARIES = (
@@ -131,8 +121,11 @@ class TextChunker:
         max_chars: int = 180,
         soft_boundary_min_chars: int = 55,
     ):
+
         self.min_chars = min_chars
+
         self.max_chars = max_chars
+
         self.soft_boundary_min_chars = (
             soft_boundary_min_chars
         )
@@ -145,6 +138,7 @@ class TextChunker:
     ) -> list[str]:
 
         if not token:
+
             return []
 
         self._buffer += token
@@ -156,15 +150,17 @@ class TextChunker:
             boundary = self._find_boundary()
 
             if boundary is None:
+
                 break
 
-            end_index, character = boundary
+            end_index, _ = boundary
 
             candidate = self._buffer[
                 :end_index + 1
             ].strip()
 
             if not candidate:
+
                 break
 
             chunks.append(
@@ -215,7 +211,6 @@ class TextChunker:
 
         candidates = []
 
-        # Hard punctuation can trigger fairly early.
         for character in self.HARD_BOUNDARIES:
 
             index = self._buffer.find(
@@ -225,7 +220,10 @@ class TextChunker:
             if index >= self.min_chars:
 
                 candidates.append(
-                    (index, character)
+                    (
+                        index,
+                        character,
+                    )
                 )
 
         if candidates:
@@ -235,8 +233,6 @@ class TextChunker:
                 key=lambda item: item[0],
             )
 
-        # Soft punctuation needs more text so TTS does not
-        # receive tiny fragments such as "Okay,".
         for character in self.SOFT_BOUNDARIES:
 
             index = self._buffer.find(
@@ -246,7 +242,10 @@ class TextChunker:
             if index >= self.soft_boundary_min_chars:
 
                 candidates.append(
-                    (index, character)
+                    (
+                        index,
+                        character,
+                    )
                 )
 
         if candidates:
@@ -292,33 +291,113 @@ async def _stream_llm_text(
     messages: list[Message],
     config: VoicePipelineConfig,
 ) -> AsyncIterator[str]:
-    """
-    Consume Basket's existing LLM streaming client directly.
 
-    No HTTP round-trip through Basket itself.
-    """
+    started_at = time.perf_counter()
+
+    logger.info(
+        "=================================================="
+    )
+
+    logger.info(
+        "LLM START"
+    )
+
+    logger.info(
+        "LLM model=%r",
+        config.model,
+    )
+
+    logger.info(
+        "LLM messages=%d",
+        len(messages),
+    )
+
+    logger.info(
+        "LLM temperature=%r top_p=%r max_tokens=%r "
+        "stop=%r seed=%r abstracted=%r",
+        config.temperature,
+        config.top_p,
+        config.max_tokens,
+        config.stop,
+        config.seed,
+        config.abstracted,
+    )
+
+    logger.info(
+        "LLM system_prompt=%r",
+        config.system_prompt,
+    )
+
+    logger.info(
+        "=================================================="
+    )
 
     request = ChatRequest(
+
         model=config.model,
+
         messages=messages,
+
         stream=True,
+
         temperature=config.temperature,
+
         top_p=config.top_p,
+
         max_tokens=config.max_tokens,
+
         stop=config.stop,
+
         seed=config.seed,
+
         system_prompt=config.system_prompt,
+
         abstracted=config.abstracted,
     )
 
-    response = await streaming_completion(
-        request
+    logger.info(
+        "LLM request object created"
+    )
+
+    request_started_at = time.perf_counter()
+
+    logger.info(
+        "LLM: calling streaming_completion()"
+    )
+
+    try:
+
+        response = await streaming_completion(
+            request
+        )
+
+    except Exception:
+
+        logger.exception(
+            "LLM: streaming_completion() FAILED after %.3fs",
+            time.perf_counter()
+            - request_started_at,
+        )
+
+        raise
+
+    logger.info(
+        "LLM: streaming_completion() returned after %.3fs type=%s",
+        time.perf_counter()
+        - request_started_at,
+        type(response).__name__,
     )
 
     if not isinstance(
         response,
         StreamingResponse,
     ):
+
+        logger.error(
+            "LLM: unexpected response type=%s",
+            type(response).__name__,
+        )
+
         raise HTTPException(
             status_code=502,
             detail=(
@@ -327,22 +406,96 @@ async def _stream_llm_text(
             ),
         )
 
-    async for token in response.body_iterator:
+    logger.info(
+        "LLM: beginning response.body_iterator"
+    )
 
-        if token is None:
-            continue
+    first_token = True
 
-        if isinstance(token, bytes):
+    token_count = 0
 
-            token = token.decode(
-                "utf-8",
-                errors="replace",
+    character_count = 0
+
+    try:
+
+        async for token in response.body_iterator:
+
+            if token is None:
+
+                continue
+
+            if isinstance(
+                token,
+                bytes,
+            ):
+
+                token = token.decode(
+                    "utf-8",
+                    errors="replace",
+                )
+
+            token = str(
+                token
             )
 
-        token = str(token)
+            if not token:
 
-        if token:
+                continue
+
+            token_count += 1
+
+            character_count += len(token)
+
+            if first_token:
+
+                first_token = False
+
+                logger.info(
+                    "LLM FIRST TOKEN after %.3fs: %r",
+                    time.perf_counter()
+                    - started_at,
+                    token,
+                )
+
+            else:
+
+                logger.debug(
+                    "LLM TOKEN #%d: %r",
+                    token_count,
+                    token,
+                )
+
             yield token
+
+    except Exception:
+
+        logger.exception(
+            "LLM token stream FAILED after %.3fs",
+            time.perf_counter()
+            - started_at,
+        )
+
+        raise
+
+    logger.info(
+        "=================================================="
+    )
+
+    logger.info(
+        "LLM END"
+    )
+
+    logger.info(
+        "LLM completed in %.3fs tokens=%d characters=%d",
+        time.perf_counter()
+        - started_at,
+        token_count,
+        character_count,
+    )
+
+    logger.info(
+        "=================================================="
+    )
 
 
 # ============================================================
@@ -355,32 +508,36 @@ async def llm_to_tts(
     messages: list[Message],
     config: VoicePipelineConfig,
 ) -> AsyncIterator[PipelineEvent]:
-    """
-    Shared realtime LLM -> TTS pipeline.
 
-            LLM tokens
-                 ↓
-            text buffer
-                 ↓
-          natural boundary
-                 ↓
-              TTS
-                 ↓
-             PCM audio
+    started_at = time.perf_counter()
 
-    Used by BOTH:
+    logger.info(
+        "=================================================="
+    )
 
-        text -> LLM -> TTS
-        voice -> STT -> LLM -> TTS
-    """
+    logger.info(
+        "LLM -> TTS START"
+    )
+
+    logger.info(
+        "TTS voice=%r temperature=%r",
+        config.voice,
+        config.tts_temperature,
+    )
+
+    logger.info(
+        "=================================================="
+    )
 
     chunker = TextChunker()
 
     full_text: list[str] = []
 
-    logger.debug(
-        "Basket LLM -> TTS pipeline started."
-    )
+    phrase_count = 0
+
+    audio_chunk_count = 0
+
+    audio_byte_count = 0
 
     async for token in _stream_llm_text(
         messages=messages,
@@ -400,21 +557,86 @@ async def llm_to_tts(
             token
         ):
 
+            phrase_count += 1
+
+            logger.info(
+                "TTS PHRASE #%d READY: %r",
+                phrase_count,
+                phrase,
+            )
+
             yield PipelineEvent(
                 type="tts.started",
                 data=phrase,
             )
 
-            async for audio_chunk in stream_tts_pcm(
-                text=phrase,
-                voice=config.voice,
-                temperature=config.tts_temperature,
-            ):
+            tts_started_at = (
+                time.perf_counter()
+            )
 
-                yield PipelineEvent(
-                    type="tts.audio",
-                    data=audio_chunk,
+            logger.info(
+                "TTS: starting phrase #%d",
+                phrase_count,
+            )
+
+            try:
+
+                async for audio_chunk in stream_tts_pcm(
+
+                    text=phrase,
+
+                    voice=config.voice,
+
+                    temperature=config.tts_temperature,
+
+                ):
+
+                    if isinstance(
+                        audio_chunk,
+                        bytes,
+                    ):
+
+                        audio_chunk_count += 1
+
+                        audio_byte_count += (
+                            len(audio_chunk)
+                        )
+
+                        logger.debug(
+                            "TTS AUDIO CHUNK #%d size=%d",
+                            audio_chunk_count,
+                            len(audio_chunk),
+                        )
+
+                    else:
+
+                        logger.error(
+                            "TTS returned %s instead of bytes",
+                            type(audio_chunk).__name__,
+                        )
+
+                    yield PipelineEvent(
+                        type="tts.audio",
+                        data=audio_chunk,
+                    )
+
+            except Exception:
+
+                logger.exception(
+                    "TTS FAILED for phrase #%d after %.3fs",
+                    phrase_count,
+                    time.perf_counter()
+                    - tts_started_at,
                 )
+
+                raise
+
+            logger.info(
+                "TTS: phrase #%d completed in %.3fs",
+                phrase_count,
+                time.perf_counter()
+                - tts_started_at,
+            )
 
             yield PipelineEvent(
                 type="tts.completed",
@@ -429,21 +651,79 @@ async def llm_to_tts(
 
     if final_phrase:
 
+        phrase_count += 1
+
+        logger.info(
+            "TTS FINAL PHRASE #%d READY: %r",
+            phrase_count,
+            final_phrase,
+        )
+
         yield PipelineEvent(
             type="tts.started",
             data=final_phrase,
         )
 
-        async for audio_chunk in stream_tts_pcm(
-            text=final_phrase,
-            voice=config.voice,
-            temperature=config.tts_temperature,
-        ):
+        tts_started_at = (
+            time.perf_counter()
+        )
 
-            yield PipelineEvent(
-                type="tts.audio",
-                data=audio_chunk,
+        try:
+
+            async for audio_chunk in stream_tts_pcm(
+
+                text=final_phrase,
+
+                voice=config.voice,
+
+                temperature=config.tts_temperature,
+
+            ):
+
+                if isinstance(
+                    audio_chunk,
+                    bytes,
+                ):
+
+                    audio_chunk_count += 1
+
+                    audio_byte_count += (
+                        len(audio_chunk)
+                    )
+
+                    logger.debug(
+                        "TTS AUDIO CHUNK #%d size=%d",
+                        audio_chunk_count,
+                        len(audio_chunk),
+                    )
+
+                else:
+
+                    logger.error(
+                        "TTS returned %s instead of bytes",
+                        type(audio_chunk).__name__,
+                    )
+
+                yield PipelineEvent(
+                    type="tts.audio",
+                    data=audio_chunk,
+                )
+
+        except Exception:
+
+            logger.exception(
+                "TTS FINAL PHRASE FAILED after %.3fs",
+                time.perf_counter()
+                - tts_started_at,
             )
+
+            raise
+
+        logger.info(
+            "TTS: final phrase completed in %.3fs",
+            time.perf_counter()
+            - tts_started_at,
+        )
 
         yield PipelineEvent(
             type="tts.completed",
@@ -454,9 +734,38 @@ async def llm_to_tts(
         full_text
     ).strip()
 
+    logger.info(
+        "LLM FINAL TEXT: %r",
+        final_text,
+    )
+
     yield PipelineEvent(
         type="llm.final",
         data=final_text,
+    )
+
+    logger.info(
+        "=================================================="
+    )
+
+    logger.info(
+        "LLM -> TTS END"
+    )
+
+    logger.info(
+        "LLM -> TTS completed in %.3fs "
+        "phrases=%d audio_chunks=%d audio_bytes=%d "
+        "text_chars=%d",
+        time.perf_counter()
+        - started_at,
+        phrase_count,
+        audio_chunk_count,
+        audio_byte_count,
+        len(final_text),
+    )
+
+    logger.info(
+        "=================================================="
     )
 
 
@@ -471,12 +780,6 @@ async def text_to_voice(
     config: VoicePipelineConfig,
     messages: list[Message] | None = None,
 ) -> AsyncIterator[PipelineEvent]:
-    """
-    Text -> LLM -> TTS.
-
-    This is the pipeline Quince can use for agentic progress
-    updates, notifications, announcements, etc.
-    """
 
     text = text.strip()
 
@@ -496,6 +799,12 @@ async def text_to_voice(
             role="user",
             content=text,
         )
+    )
+
+    logger.info(
+        "TEXT -> VOICE START text_chars=%d messages=%d",
+        len(text),
+        len(conversation),
     )
 
     yield PipelineEvent(
@@ -519,6 +828,10 @@ async def text_to_voice(
         },
     )
 
+    logger.info(
+        "TEXT -> VOICE COMPLETE"
+    )
+
 
 # ============================================================
 # PCM -> WAV
@@ -530,16 +843,18 @@ def _pcm_to_wav(
     *,
     sample_rate: int = 16_000,
 ) -> bytes:
-    """
-    Convert Basket's realtime microphone contract:
 
-        PCM16 mono 16 kHz
-
-    into the WAV file expected by the current llama.cpp
-    transcription endpoint.
-    """
+    logger.info(
+        "PCM -> WAV: input_bytes=%d sample_rate=%d",
+        len(pcm_audio),
+        sample_rate,
+    )
 
     if not pcm_audio:
+
+        logger.error(
+            "PCM -> WAV: empty audio"
+        )
 
         raise HTTPException(
             status_code=400,
@@ -569,7 +884,14 @@ def _pcm_to_wav(
             pcm_audio
         )
 
-    return output.getvalue()
+    wav_bytes = output.getvalue()
+
+    logger.info(
+        "PCM -> WAV COMPLETE: output_bytes=%d",
+        len(wav_bytes),
+    )
+
+    return wav_bytes
 
 
 # ============================================================
@@ -583,19 +905,54 @@ async def voice_to_voice(
     config: VoicePipelineConfig,
     messages: list[Message] | None = None,
 ) -> AsyncIterator[PipelineEvent]:
-    """
-    Voice -> STT -> LLM -> TTS.
 
-    The WebSocket layer feeds microphone PCM frames into
-    audio_stream.
+    pipeline_started_at = time.perf_counter()
 
-    The current llama.cpp STT backend remains a file-based
-    transcription API, so this orchestration stage accumulates
-    the utterance and performs one authoritative final STT pass.
+    logger.info(
+        "##################################################"
+    )
 
-    The LLM -> TTS stage is exactly the same implementation
-    used by text_to_voice().
-    """
+    logger.info(
+        "VOICE_TO_VOICE START"
+    )
+
+    logger.info(
+        "STT prompt=%r",
+        config.stt_prompt,
+    )
+
+    logger.info(
+        "LLM model=%r temperature=%r top_p=%r "
+        "max_tokens=%r stop=%r seed=%r "
+        "abstracted=%r",
+        config.model,
+        config.temperature,
+        config.top_p,
+        config.max_tokens,
+        config.stop,
+        config.seed,
+        config.abstracted,
+    )
+
+    logger.info(
+        "LLM system_prompt=%r",
+        config.system_prompt,
+    )
+
+    logger.info(
+        "incoming messages=%d",
+        len(messages or []),
+    )
+
+    logger.info(
+        "TTS voice=%r temperature=%r",
+        config.voice,
+        config.tts_temperature,
+    )
+
+    logger.info(
+        "##################################################"
+    )
 
     yield PipelineEvent(
         type="pipeline.started",
@@ -604,38 +961,104 @@ async def voice_to_voice(
         },
     )
 
+    logger.info(
+        "VOICE_TO_VOICE: pipeline.started emitted"
+    )
+
     audio_buffer = bytearray()
 
+    chunk_count = 0
+
     # --------------------------------------------------------
-    # Collect microphone stream
+    # COLLECT AUDIO
     # --------------------------------------------------------
 
-    async for chunk in audio_stream:
+    logger.info(
+        "VOICE_TO_VOICE: collecting audio..."
+    )
 
-        if not chunk:
-            continue
+    try:
 
-        audio_buffer.extend(
-            chunk
+        async for chunk in audio_stream:
+
+            if not chunk:
+
+                continue
+
+            chunk_count += 1
+
+            audio_buffer.extend(
+                chunk
+            )
+
+            logger.debug(
+                "VOICE_TO_VOICE AUDIO #%d size=%d total=%d",
+                chunk_count,
+                len(chunk),
+                len(audio_buffer),
+            )
+
+    except Exception:
+
+        logger.exception(
+            "VOICE_TO_VOICE: audio collection FAILED"
         )
 
+        raise
+
+    logger.info(
+        "VOICE_TO_VOICE: audio collection complete "
+        "chunks=%d bytes=%d",
+        chunk_count,
+        len(audio_buffer),
+    )
+
     if not audio_buffer:
+
+        logger.error(
+            "VOICE_TO_VOICE: NO AUDIO"
+        )
 
         raise HTTPException(
             status_code=400,
             detail="No audio was received.",
         )
 
+    audio_seconds = (
+        len(audio_buffer)
+        / (
+            16_000
+            * 2
+        )
+    )
+
+    logger.info(
+        "VOICE_TO_VOICE: input duration=%.3fs",
+        audio_seconds,
+    )
+
     # --------------------------------------------------------
-    # Convert PCM -> WAV
+    # PCM -> WAV
     # --------------------------------------------------------
+
+    wav_started_at = time.perf_counter()
+
+    logger.info(
+        "VOICE_TO_VOICE: converting PCM -> WAV"
+    )
 
     wav_bytes = _pcm_to_wav(
         bytes(audio_buffer)
     )
 
+    logger.info(
+        "VOICE_TO_VOICE: WAV conversion took %.3fs",
+        time.perf_counter()
+        - wav_started_at,
+    )
+
     # --------------------------------------------------------
-    # Reuse existing STT client
+    # STT UPLOAD
     # --------------------------------------------------------
 
     upload = UploadFile(
@@ -648,13 +1071,64 @@ async def voice_to_voice(
         }),
     )
 
+    logger.info(
+        "VOICE_TO_VOICE: UploadFile created"
+    )
+
+    # --------------------------------------------------------
+    # STT
+    # --------------------------------------------------------
+
+    logger.info(
+        "=================================================="
+    )
+
+    logger.info(
+        "STT START"
+    )
+
+    logger.info(
+        "STT: calling _transcribe()"
+    )
+
+    logger.info(
+        "STT: prompt=%r wav_bytes=%d",
+        config.stt_prompt,
+        len(wav_bytes),
+    )
+
     yield PipelineEvent(
         type="stt.started",
     )
 
-    stt_result = await _transcribe(
-        file=upload,
-        prompt=config.stt_prompt,
+    stt_started_at = time.perf_counter()
+
+    try:
+
+        stt_result = await _transcribe(
+            file=upload,
+            prompt=config.stt_prompt,
+        )
+
+    except Exception:
+
+        logger.exception(
+            "STT FAILED after %.3fs",
+            time.perf_counter()
+            - stt_started_at,
+        )
+
+        raise
+
+    logger.info(
+        "STT backend returned after %.3fs",
+        time.perf_counter()
+        - stt_started_at,
+    )
+
+    logger.info(
+        "STT result type=%s",
+        type(stt_result).__name__,
     )
 
     transcript = ""
@@ -678,12 +1152,31 @@ async def voice_to_voice(
             stt_result
         ).strip()
 
+    logger.info(
+        "STT FINAL TRANSCRIPT: %r",
+        transcript,
+    )
+
+    logger.info(
+        "STT COMPLETE in %.3fs",
+        time.perf_counter()
+        - stt_started_at,
+    )
+
+    logger.info(
+        "=================================================="
+    )
+
     yield PipelineEvent(
         type="stt.final",
         data=transcript,
     )
 
     if not transcript:
+
+        logger.warning(
+            "VOICE_TO_VOICE: empty transcript"
+        )
 
         yield PipelineEvent(
             type="pipeline.completed",
@@ -693,14 +1186,26 @@ async def voice_to_voice(
             },
         )
 
+        logger.info(
+            "VOICE_TO_VOICE COMPLETE in %.3fs "
+            "(empty transcript)",
+            time.perf_counter()
+            - pipeline_started_at,
+        )
+
         return
 
     # --------------------------------------------------------
-    # Build LLM conversation
+    # LLM CONVERSATION
     # --------------------------------------------------------
 
     conversation = list(
         messages or []
+    )
+
+    logger.info(
+        "VOICE_TO_VOICE: existing conversation messages=%d",
+        len(conversation),
     )
 
     conversation.append(
@@ -710,20 +1215,76 @@ async def voice_to_voice(
         )
     )
 
+    logger.info(
+        "VOICE_TO_VOICE: final LLM conversation messages=%d",
+        len(conversation),
+    )
+
+    logger.debug(
+        "VOICE_TO_VOICE: conversation=%r",
+        conversation,
+    )
+
     # --------------------------------------------------------
-    # Shared LLM -> TTS
+    # LLM -> TTS
     # --------------------------------------------------------
 
-    async for event in llm_to_tts(
-        messages=conversation,
-        config=config,
-    ):
+    logger.info(
+        "VOICE_TO_VOICE: entering llm_to_tts()"
+    )
 
-        yield event
+    llm_tts_started_at = (
+        time.perf_counter()
+    )
+
+    try:
+
+        async for event in llm_to_tts(
+            messages=conversation,
+            config=config,
+        ):
+
+            logger.debug(
+                "VOICE_TO_VOICE: yielded event=%s",
+                event.type,
+            )
+
+            yield event
+
+    except Exception:
+
+        logger.exception(
+            "VOICE_TO_VOICE: llm_to_tts() FAILED "
+            "after %.3fs",
+            time.perf_counter()
+            - llm_tts_started_at,
+        )
+
+        raise
+
+    logger.info(
+        "VOICE_TO_VOICE: llm_to_tts() completed in %.3fs",
+        time.perf_counter()
+        - llm_tts_started_at,
+    )
 
     yield PipelineEvent(
         type="pipeline.completed",
         data={
             "mode": "voice_to_voice",
         },
+    )
+
+    logger.info(
+        "##################################################"
+    )
+
+    logger.info(
+        "VOICE_TO_VOICE COMPLETE in %.3fs",
+        time.perf_counter()
+        - pipeline_started_at,
+    )
+
+    logger.info(
+        "##################################################"
     )

@@ -19,7 +19,7 @@ DEFAULT_TTS_TEMP = 0.75
 
 STT_HOST = os.getenv("STT_HOST", "127.0.0.1")
 STT_PORT = int(os.getenv("STT_PORT", "7002"))
-DEFAULT_STT_MODEL = "Qwen3-ASR-0.6B-Q8_0"
+DEFAULT_STT_MODEL = "Qwen3-ASR-0.6B-Q8_0" # Slightly more accurate and heavier model: Qwen3-ASR-1.7B-Q8_0
 
 models = {
     "default": DEFAULT_LLM,

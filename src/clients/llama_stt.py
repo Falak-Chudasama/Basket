@@ -289,13 +289,23 @@ async def _transcribe_bytes(
     }
 
     data = {
-        "model": DEFAULT_STT_MODEL,
-        "language": "en",
-        "response_format": "json",
+    "model": DEFAULT_STT_MODEL,
+    "language": "en",
+    "response_format": "json",
+
+        "prompt": (
+            "Transcribe the speech in English only. "
+            "Do not output Chinese, Japanese, Korean, Arabic, "
+            "Hindi, Cyrillic, or any other non-English language."
+        ),
     }
 
     if prompt:
-        data["prompt"] = prompt
+        data["prompt"] = (
+            "Transcribe the speech in English only. "
+            "Do not output any non-English language. "
+            + prompt
+        )
 
     try:
         response = await client.post(

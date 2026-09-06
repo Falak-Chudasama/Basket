@@ -3,9 +3,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Final
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 
 from src.clients.llama_stt import (
     STREAM_MIN_AUDIO_SECONDS,
@@ -38,10 +44,10 @@ WS_PATH: Final[str] = "/ws"
 
 def _json_event(event: PipelineEvent) -> dict:
     """
-    Convert an internal pipeline event into a JSON-safe object.
+    Convert an internal pipeline event into a JSON-safe event.
 
-    Binary TTS events are handled separately by the WebSocket
-    transport and are never passed through here.
+    Binary TTS audio is handled separately by the WebSocket
+    transport.
     """
 
     return {
@@ -51,7 +57,7 @@ def _json_event(event: PipelineEvent) -> dict:
 
 
 # ============================================================
-# VOICE WEBSOCKET
+# WEBSOCKET
 # ============================================================
 
 
@@ -69,42 +75,30 @@ async def stt_stream(
         ...
         {"type":"stop"}
 
-    Optional control messages:
+    Optional:
 
         {"type":"cancel"}
         {"type":"ping"}
 
-    The start message contains:
-
-        STT:
-            prompt
-            stream
-            sample_rate
-
-        LLM:
-            model
-            messages
-            temperature
-            top_p
-            max_tokens
-            stop
-            seed
-            system_prompt
-            abstracted
-
-        TTS:
-            voice
-            temperature
-
-    TTS text is intentionally not supplied by the client.
-    Basket derives TTS text from the generated LLM response.
+    The WebSocket transports data and delegates the actual
+    STT -> LLM -> TTS pipeline to chat_pipeline.py.
     """
 
     await websocket.accept()
 
     logger.info(
-        "Voice WebSocket connected: client=%s",
+        "=================================================="
+    )
+    logger.info(
+        "VOICE WS CONNECTED"
+    )
+    logger.info(
+        "client=%s path=%s",
         websocket.client,
+        WS_PATH,
+    )
+    logger.info(
+        "=================================================="
     )
 
     started = False
@@ -137,6 +131,11 @@ async def stt_stream(
         payload: dict,
     ) -> None:
 
+        logger.debug(
+            "WS -> JSON: %s",
+            payload,
+        )
+
         async with send_lock:
 
             await websocket.send_json(
@@ -147,6 +146,12 @@ async def stt_stream(
         code: str,
         message: str,
     ) -> None:
+
+        logger.error(
+            "WS ERROR code=%s message=%s",
+            code,
+            message,
+        )
 
         await send_json(
             {
@@ -193,6 +198,12 @@ async def stt_stream(
         nonlocal last_partial_audio_bytes
         nonlocal last_partial_text
 
+        partial_started_at = time.perf_counter()
+
+        logger.info(
+            "PARTIAL STT START"
+        )
+
         current = bytes(
             audio_buffer
         )
@@ -201,13 +212,27 @@ async def stt_stream(
             -window_bytes():
         ]
 
+        logger.info(
+            "PARTIAL STT: total_audio=%d rolling_window=%d",
+            len(current),
+            len(rolling),
+        )
+
         if len(rolling) < min_audio_bytes():
+
+            logger.info(
+                "PARTIAL STT: skipped, insufficient audio"
+            )
 
             return
 
         try:
 
             import httpx
+
+            logger.info(
+                "PARTIAL STT: calling _stream_transcribe_window()"
+            )
 
             async with httpx.AsyncClient(
                 timeout=_timeout()
@@ -218,9 +243,15 @@ async def stt_stream(
                         client,
                         rolling,
                         prompt=voice_config.prompt,
-                        sample_rate=voice_config.sample_rate,
+                        sample_rate=STREAM_SAMPLE_RATE,
                     )
                 )
+
+            logger.info(
+                "PARTIAL STT: backend returned after %.3fs",
+                time.perf_counter()
+                - partial_started_at,
+            )
 
             text = str(
                 result.get(
@@ -229,6 +260,11 @@ async def stt_stream(
                 )
                 or ""
             ).strip()
+
+            logger.info(
+                "PARTIAL STT RESULT: %r",
+                text,
+            )
 
             if (
                 text
@@ -248,15 +284,26 @@ async def stt_stream(
                 len(audio_buffer)
             )
 
+            logger.info(
+                "PARTIAL STT COMPLETE in %.3fs",
+                time.perf_counter()
+                - partial_started_at,
+            )
+
         except asyncio.CancelledError:
+
+            logger.warning(
+                "PARTIAL STT CANCELLED"
+            )
 
             raise
 
         except Exception as exc:
 
             logger.exception(
-                "Partial STT failed: client=%s",
-                websocket.client,
+                "PARTIAL STT FAILED after %.3fs",
+                time.perf_counter()
+                - partial_started_at,
             )
 
             await send_error(
@@ -269,15 +316,12 @@ async def stt_stream(
         nonlocal partial_task
 
         if not voice_config.stream:
-
             return
 
         if partial_task is not None:
-
             return
 
         if len(audio_buffer) < min_audio_bytes():
-
             return
 
         if (
@@ -285,8 +329,12 @@ async def stt_stream(
             - last_partial_audio_bytes
             < partial_interval_bytes()
         ):
-
             return
+
+        logger.info(
+            "STARTING PARTIAL STT TASK: buffered=%d bytes",
+            len(audio_buffer),
+        )
 
         partial_task = asyncio.create_task(
             run_partial_stt()
@@ -301,7 +349,6 @@ async def stt_stream(
             partial_task = None
 
             if task.cancelled():
-
                 return
 
             try:
@@ -311,7 +358,7 @@ async def stt_stream(
             except Exception:
 
                 logger.exception(
-                    "Partial STT task crashed."
+                    "PARTIAL STT TASK CRASHED"
                 )
 
         partial_task.add_done_callback(
@@ -324,7 +371,66 @@ async def stt_stream(
 
     async def run_pipeline() -> None:
 
+        pipeline_started_at = time.perf_counter()
+
+        logger.info(
+            "--------------------------------------------------"
+        )
+        logger.info(
+            "WS PIPELINE: ENTER"
+        )
+        logger.info(
+            "WS PIPELINE: audio_bytes=%d duration=%.3fs",
+            len(audio_buffer),
+            stream_audio_duration_seconds(
+                bytes(audio_buffer),
+                sample_rate=STREAM_SAMPLE_RATE,
+            ),
+        )
+
+        logger.info(
+            "WS PIPELINE: STT prompt=%r",
+            voice_config.prompt,
+        )
+
+        logger.info(
+            "WS PIPELINE: LLM model=%r",
+            voice_config.llm.model,
+        )
+
+        logger.info(
+            "WS PIPELINE: LLM temperature=%r top_p=%r "
+            "max_tokens=%r stop=%r seed=%r",
+            voice_config.llm.temperature,
+            voice_config.llm.top_p,
+            voice_config.llm.max_tokens,
+            voice_config.llm.stop,
+            voice_config.llm.seed,
+        )
+
+        logger.info(
+            "WS PIPELINE: LLM system_prompt=%r",
+            voice_config.llm.system_prompt,
+        )
+
+        logger.info(
+            "WS PIPELINE: LLM messages=%d abstracted=%r",
+            len(voice_config.llm.messages),
+            voice_config.llm.abstracted,
+        )
+
+        logger.info(
+            "WS PIPELINE: TTS voice=%r temperature=%r",
+            voice_config.tts.voice,
+            voice_config.tts.temperature,
+        )
+
         async def audio_source():
+
+            logger.info(
+                "audio_source(): yielding %d bytes",
+                len(audio_buffer),
+            )
 
             if audio_buffer:
 
@@ -389,53 +495,123 @@ async def stt_stream(
             ),
         )
 
-        async for event in voice_to_voice(
+        logger.info(
+            "WS PIPELINE: VoicePipelineConfig created"
+        )
 
-            audio_stream=audio_source(),
+        logger.info(
+            "WS PIPELINE: calling voice_to_voice()"
+        )
 
-            config=config,
+        event_count = 0
+        tts_audio_chunks = 0
+        tts_audio_bytes = 0
 
-            messages=list(
-                voice_config.llm.messages
-            ),
-        ):
+        try:
 
-            # ------------------------------------------------
-            # TTS AUDIO
-            # ------------------------------------------------
+            async for event in voice_to_voice(
 
-            if event.type == "tts.audio":
+                audio_stream=audio_source(),
 
-                audio = event.data
+                config=config,
 
-                if not isinstance(
-                    audio,
-                    bytes,
-                ):
+                messages=list(
+                    voice_config.llm.messages
+                ),
+
+            ):
+
+                event_count += 1
+
+                if event.type == "tts.audio":
+
+                    audio = event.data
+
+                    if audio is None:
+                        logger.warning(
+                            "TTS audio event contained no data."
+                        )
+                        continue
+
+                    try:
+                        audio = bytes(audio)
+                    except Exception:
+                        logger.exception(
+                            "Could not normalize TTS audio event: type=%s",
+                            type(audio).__name__,
+                        )
+                        continue
+
+                    if not audio:
+                        logger.warning(
+                            "TTS audio event contained an empty chunk."
+                        )
+                        continue
+
+                    logger.info(
+                        "Sending TTS audio to client: %d bytes",
+                        len(audio),
+                    )
+
+                    async with send_lock:
+                        await websocket.send_bytes(audio)
 
                     continue
 
-                async with send_lock:
+                logger.info(
+                    "WS PIPELINE EVENT #%d: type=%s data=%r",
+                    event_count,
+                    event.type,
+                    event.data,
+                )
 
-                    await websocket.send_bytes(
-                        audio
-                    )
+                await send_json(
+                    _json_event(event)
+                )
 
-                continue
+        except asyncio.CancelledError:
 
-            # ------------------------------------------------
-            # JSON EVENTS
-            # ------------------------------------------------
-
-            await send_json(
-                _json_event(event)
+            logger.warning(
+                "WS PIPELINE CANCELLED after %.3fs",
+                time.perf_counter()
+                - pipeline_started_at,
             )
+
+            raise
+
+        except Exception:
+
+            logger.exception(
+                "WS PIPELINE FAILED after %.3fs",
+                time.perf_counter()
+                - pipeline_started_at,
+            )
+
+            raise
+
+        logger.info(
+            "WS PIPELINE COMPLETE in %.3fs",
+            time.perf_counter()
+            - pipeline_started_at,
+        )
+
+        logger.info(
+            "WS PIPELINE SUMMARY: events=%d "
+            "tts_chunks=%d tts_bytes=%d",
+            event_count,
+            tts_audio_chunks,
+            tts_audio_bytes,
+        )
 
     # ========================================================
     # READY
     # ========================================================
 
     try:
+
+        logger.info(
+            "Sending READY event"
+        )
 
         await send_json(
             {
@@ -459,11 +635,19 @@ async def stt_stream(
             }
         )
 
+        logger.info(
+            "READY sent successfully"
+        )
+
         # ====================================================
         # MAIN LOOP
         # ====================================================
 
         while True:
+
+            logger.debug(
+                "WS waiting for next message..."
+            )
 
             message = await websocket.receive()
 
@@ -477,10 +661,7 @@ async def stt_stream(
             ):
 
                 logger.info(
-                    (
-                        "Voice WebSocket disconnected: "
-                        "client=%s"
-                    ),
+                    "VOICE WS DISCONNECTED: client=%s",
                     websocket.client,
                 )
 
@@ -510,10 +691,27 @@ async def stt_stream(
 
                 if not audio:
 
+                    logger.debug(
+                        "Empty audio frame ignored"
+                    )
+
                     continue
 
                 audio_buffer.extend(
                     audio
+                )
+
+                logger.debug(
+                    (
+                        "WS AUDIO: chunk=%d bytes "
+                        "total=%d bytes duration=%.3fs"
+                    ),
+                    len(audio),
+                    len(audio_buffer),
+                    stream_audio_duration_seconds(
+                        bytes(audio_buffer),
+                        sample_rate=STREAM_SAMPLE_RATE,
+                    ),
                 )
 
                 maybe_start_partial_stt()
@@ -521,7 +719,7 @@ async def stt_stream(
                 continue
 
             # ------------------------------------------------
-            # TEXT / JSON
+            # CONTROL MESSAGE
             # ------------------------------------------------
 
             text = message.get(
@@ -533,12 +731,17 @@ async def stt_stream(
                 await send_error(
                     "invalid_message",
                     (
-                        "Expected a JSON control "
+                        "Expected JSON control "
                         "message or binary audio."
                     ),
                 )
 
                 continue
+
+            logger.info(
+                "WS TEXT RECEIVED: %s",
+                text,
+            )
 
             try:
 
@@ -546,7 +749,11 @@ async def stt_stream(
                     text
                 )
 
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as exc:
+
+                logger.exception(
+                    "WS JSON DECODE FAILED"
+                )
 
                 await send_error(
                     "invalid_json",
@@ -577,13 +784,41 @@ async def stt_stream(
                 "type"
             )
 
+            logger.info(
+                "WS CONTROL: type=%r",
+                message_type,
+            )
+
             # =================================================
             # START
             # =================================================
 
             if message_type == "start":
 
+                start_received_at = time.perf_counter()
+
+                logger.info(
+                    "=================================================="
+                )
+
+                logger.info(
+                    "START RECEIVED"
+                )
+
+                logger.info(
+                    "START PAYLOAD: %s",
+                    payload,
+                )
+
+                logger.info(
+                    "=================================================="
+                )
+
                 if started:
+
+                    logger.error(
+                        "START rejected: already started"
+                    )
 
                     await send_error(
                         "already_started",
@@ -605,6 +840,10 @@ async def stt_stream(
 
                 except Exception as exc:
 
+                    logger.exception(
+                        "START VALIDATION FAILED"
+                    )
+
                     await send_error(
                         "invalid_start",
                         str(exc),
@@ -612,10 +851,19 @@ async def stt_stream(
 
                     continue
 
+                logger.info(
+                    "START validation succeeded"
+                )
+
                 if (
                     request.sample_rate
                     != STREAM_SAMPLE_RATE
                 ):
+
+                    logger.error(
+                        "Unsupported sample rate: %r",
+                        request.sample_rate,
+                    )
 
                     await send_error(
                         "unsupported_sample_rate",
@@ -639,17 +887,83 @@ async def stt_stream(
                 last_partial_text = ""
 
                 logger.info(
-                    (
-                        "Voice stream started: "
-                        "client=%s "
-                        "stream=%s "
-                        "model=%s "
-                        "voice=%s"
-                    ),
-                    websocket.client,
+                    "START accepted after %.3fs",
+                    time.perf_counter()
+                    - start_received_at,
+                )
+
+                logger.info(
+                    "VOICE CONFIG:"
+                )
+
+                logger.info(
+                    "  STT prompt=%r",
+                    voice_config.prompt,
+                )
+
+                logger.info(
+                    "  STT stream=%r",
                     voice_config.stream,
+                )
+
+                logger.info(
+                    "  sample_rate=%r",
+                    voice_config.sample_rate,
+                )
+
+                logger.info(
+                    "  LLM model=%r",
                     voice_config.llm.model,
+                )
+
+                logger.info(
+                    "  LLM messages=%d",
+                    len(voice_config.llm.messages),
+                )
+
+                logger.info(
+                    "  LLM temperature=%r",
+                    voice_config.llm.temperature,
+                )
+
+                logger.info(
+                    "  LLM top_p=%r",
+                    voice_config.llm.top_p,
+                )
+
+                logger.info(
+                    "  LLM max_tokens=%r",
+                    voice_config.llm.max_tokens,
+                )
+
+                logger.info(
+                    "  LLM stop=%r",
+                    voice_config.llm.stop,
+                )
+
+                logger.info(
+                    "  LLM seed=%r",
+                    voice_config.llm.seed,
+                )
+
+                logger.info(
+                    "  LLM system_prompt=%r",
+                    voice_config.llm.system_prompt,
+                )
+
+                logger.info(
+                    "  LLM abstracted=%r",
+                    voice_config.llm.abstracted,
+                )
+
+                logger.info(
+                    "  TTS voice=%r",
                     voice_config.tts.voice,
+                )
+
+                logger.info(
+                    "  TTS temperature=%r",
+                    voice_config.tts.temperature,
                 )
 
                 await send_json(
@@ -664,6 +978,10 @@ async def stt_stream(
                     }
                 )
 
+                logger.info(
+                    "STARTED response sent"
+                )
+
                 continue
 
             # =================================================
@@ -672,7 +990,31 @@ async def stt_stream(
 
             if message_type == "stop":
 
+                stop_received_at = time.perf_counter()
+
+                logger.info(
+                    "=================================================="
+                )
+
+                logger.info(
+                    "STOP RECEIVED"
+                )
+
+                logger.info(
+                    "started=%s buffered_bytes=%d",
+                    started,
+                    len(audio_buffer),
+                )
+
+                logger.info(
+                    "=================================================="
+                )
+
                 if not started:
+
+                    logger.error(
+                        "STOP rejected: stream not started"
+                    )
 
                     await send_error(
                         "not_started",
@@ -686,11 +1028,23 @@ async def stt_stream(
 
                 started = False
 
+                logger.info(
+                    "Final audio duration: %.3fs",
+                    stream_audio_duration_seconds(
+                        bytes(audio_buffer),
+                        sample_rate=STREAM_SAMPLE_RATE,
+                    ),
+                )
+
                 # ------------------------------------------------
-                # Finish pending partial STT
+                # Wait for pending partial STT
                 # ------------------------------------------------
 
                 if partial_task is not None:
+
+                    logger.info(
+                        "Waiting for pending partial STT task..."
+                    )
 
                     try:
 
@@ -698,39 +1052,31 @@ async def stt_stream(
 
                     except asyncio.CancelledError:
 
-                        pass
+                        logger.warning(
+                            "Pending partial STT was cancelled"
+                        )
 
                     except Exception:
 
                         logger.exception(
-                            (
-                                "Partial STT task "
-                                "failed during finalization."
-                            )
+                            "Pending partial STT failed during finalization"
                         )
 
                     partial_task = None
 
-                logger.info(
-                    (
-                        "Voice stream stopped: "
-                        "client=%s "
-                        "audio_seconds=%.2f"
-                    ),
-                    websocket.client,
-                    stream_audio_duration_seconds(
-                        bytes(audio_buffer),
-                        sample_rate=(
-                            voice_config.sample_rate
-                        ),
-                    ),
-                )
+                    logger.info(
+                        "Pending partial STT task resolved"
+                    )
 
                 # ------------------------------------------------
                 # No audio
                 # ------------------------------------------------
 
                 if not audio_buffer:
+
+                    logger.warning(
+                        "STOP received with no audio"
+                    )
 
                     await send_json(
                         {
@@ -741,9 +1087,31 @@ async def stt_stream(
 
                     continue
 
+                logger.info(
+                    "STOP preprocessing complete after %.3fs",
+                    time.perf_counter()
+                    - stop_received_at,
+                )
+
                 # ------------------------------------------------
-                # END-TO-END PIPELINE
+                # PIPELINE
                 # ------------------------------------------------
+
+                pipeline_started_at = (
+                    time.perf_counter()
+                )
+
+                logger.info(
+                    "=================================================="
+                )
+
+                logger.info(
+                    "STARTING VOICE PIPELINE"
+                )
+
+                logger.info(
+                    "=================================================="
+                )
 
                 try:
 
@@ -751,16 +1119,20 @@ async def stt_stream(
 
                 except asyncio.CancelledError:
 
+                    logger.warning(
+                        "VOICE PIPELINE CANCELLED after %.3fs",
+                        time.perf_counter()
+                        - pipeline_started_at,
+                    )
+
                     raise
 
                 except Exception as exc:
 
                     logger.exception(
-                        (
-                            "Voice pipeline failed: "
-                            "client=%s"
-                        ),
-                        websocket.client,
+                        "VOICE PIPELINE FAILED after %.3fs",
+                        time.perf_counter()
+                        - pipeline_started_at,
                     )
 
                     await send_error(
@@ -768,15 +1140,31 @@ async def stt_stream(
                         str(exc),
                     )
 
+                else:
+
+                    logger.info(
+                        "VOICE PIPELINE FINISHED after %.3fs",
+                        time.perf_counter()
+                        - pipeline_started_at,
+                    )
+
                 # ------------------------------------------------
-                # Reset utterance state
+                # RESET
                 # ------------------------------------------------
+
+                logger.info(
+                    "Resetting voice turn state"
+                )
 
                 audio_buffer.clear()
 
                 last_partial_audio_bytes = 0
 
                 last_partial_text = ""
+
+                logger.info(
+                    "Voice turn reset complete"
+                )
 
                 continue
 
@@ -785,6 +1173,10 @@ async def stt_stream(
             # =================================================
 
             if message_type == "ping":
+
+                logger.info(
+                    "PING received"
+                )
 
                 await send_json(
                     {
@@ -800,7 +1192,15 @@ async def stt_stream(
 
             if message_type == "cancel":
 
+                logger.info(
+                    "CANCEL received"
+                )
+
                 if partial_task is not None:
+
+                    logger.info(
+                        "Cancelling partial STT task"
+                    )
 
                     partial_task.cancel()
 
@@ -815,10 +1215,7 @@ async def stt_stream(
                     except Exception:
 
                         logger.exception(
-                            (
-                                "Partial STT task "
-                                "failed during cancellation."
-                            )
+                            "Partial STT failed during cancellation"
                         )
 
                     partial_task = None
@@ -837,11 +1234,20 @@ async def stt_stream(
                     }
                 )
 
+                logger.info(
+                    "CANCEL complete"
+                )
+
                 continue
 
             # =================================================
             # UNKNOWN
             # =================================================
+
+            logger.error(
+                "Unknown WS message type: %r",
+                message_type,
+            )
 
             await send_error(
                 "unknown_message_type",
@@ -854,21 +1260,26 @@ async def stt_stream(
     except WebSocketDisconnect:
 
         logger.info(
-            (
-                "Voice WebSocket disconnected "
-                "unexpectedly: client=%s"
-            ),
+            "=================================================="
+        )
+
+        logger.info(
+            "VOICE WS DISCONNECTED"
+        )
+
+        logger.info(
+            "client=%s",
             websocket.client,
+        )
+
+        logger.info(
+            "=================================================="
         )
 
     except Exception:
 
         logger.exception(
-            (
-                "Unhandled Voice WebSocket error: "
-                "client=%s"
-            ),
-            websocket.client,
+            "UNHANDLED VOICE WS ERROR"
         )
 
         if partial_task is not None:
@@ -896,6 +1307,6 @@ async def stt_stream(
             partial_task.cancel()
 
         logger.info(
-            "Voice WebSocket session closed: client=%s",
+            "VOICE WS SESSION CLOSED: client=%s",
             websocket.client,
         )
