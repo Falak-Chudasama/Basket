@@ -959,7 +959,7 @@ async def _unload_all_models():
 # ============================================================
 
 async def _load_model(
-    model_id: str,
+    model_id: str = DEFAULT_LLM,
     context_length: int | None = None,
     eval_batch_size: int | None = None,
     flash_attention: bool | None = None,

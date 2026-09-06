@@ -1,12 +1,23 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
 from src.apis.llm import llmRouter
 from src.apis.stt import sttRouter
 from src.apis.tts import ttsRouter
 from src.socket.ws import router as wsRouter
+from src.jobs.jobs import run_jobs
 
 
-app = FastAPI(title="Basket")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("running jobs")
+    await run_jobs()
+    yield
+
+app = FastAPI(
+    title="Basket",
+    lifespan=lifespan
+)
 
 app.include_router(llmRouter)
 app.include_router(sttRouter)

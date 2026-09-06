@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "")
+RERANKER_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "")
+
 BASKET_HOST = os.getenv("BASKET_HOST", "127.0.0.1")
 BASKET_PORT = int(os.getenv("BASKET_PORT", "7000"))
 PRODUCTION = bool(os.getenv("PRODUCTION", True))
