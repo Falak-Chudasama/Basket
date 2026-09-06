@@ -18,6 +18,7 @@ set "LLM_PORT=7001"
 set "STT_PORT=7002"
 set "TTS_PORT=7003"
 set "NGINX_PORT=7004"
+set "BASKET_DB_PORT=7005"
 
 
 REM ============================================================
@@ -83,6 +84,20 @@ REM      Basket\
 REM ============================================================
 
 set "BASKET_ROOT=%~dp0.."
+
+
+REM ============================================================
+REM  BASKET DATABASE
+REM
+REM  start.bat is located inside:
+REM      Basket\infrastructure\
+REM
+REM  Therefore %~dp0.. resolves to:
+REM      Basket\
+REM ============================================================
+
+set "MONGODB_PATH=C:\project-data\basket"
+set "BASKET_PORT=7000"
 
 
 REM ============================================================

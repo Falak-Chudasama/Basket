@@ -31,10 +31,10 @@ echo.
 
 
 REM ============================================================
-REM  [1/5] NGINX
+REM  [1/7] NGINX
 REM ============================================================
 
-echo [1/5] Nginx...
+echo [1/7] Nginx...
 echo.
 echo       Using existing Windows startup instance.
 echo       Reverse proxy: HTTP / HTTPS
@@ -44,10 +44,10 @@ timeout /t 1 /nobreak >nul
 
 
 REM ============================================================
-REM  [2/5] SEARXNG
+REM  [2/7] SEARXNG
 REM ============================================================
 
-echo [2/5] Starting SearXNG...
+echo [2/7] Starting SearXNG...
 echo.
 echo       Host : %HOST%
 echo       Port : %SEARXNG_PORT%
@@ -65,10 +65,10 @@ timeout /t 2 /nobreak >nul
 
 
 REM ============================================================
-REM  [3/5] QWEN3-ASR
+REM  [3/7] QWEN3-ASR
 REM ============================================================
 
-echo [3/5] Starting Qwen3-ASR...
+echo [3/7] Starting Qwen3-ASR...
 echo.
 echo       Backend : llama.cpp
 echo       Host    : %HOST%
@@ -82,10 +82,10 @@ timeout /t 2 /nobreak >nul
 
 
 REM ============================================================
-REM  [4/5] LM STUDIO
+REM  [4/7] LM STUDIO
 REM ============================================================
 
-echo [4/5] Starting LM Studio...
+echo [4/7] Starting LM Studio...
 echo.
 echo       Host : %HOST%
 echo       Port : %LLM_PORT%
@@ -97,10 +97,10 @@ timeout /t 2 /nobreak >nul
 
 
 REM ============================================================
-REM  [5/5] POCKET TTS
+REM  [5/7] POCKET TTS
 REM ============================================================
 
-echo [5/5] Starting Pocket TTS...
+echo [5/7] Starting Pocket TTS...
 echo.
 echo       Root   : %POCKET_TTS_ROOT%
 echo       Host   : %HOST%
@@ -114,10 +114,10 @@ timeout /t 2 /nobreak >nul
 
 
 REM ============================================================
-REM  [6/6] BASKET API
+REM  [6/7] BASKET API
 REM ============================================================
 
-echo [6/6] Starting Basket API...
+echo [6/7] Starting Basket API...
 echo.
 echo       Root : %BASKET_ROOT%
 echo       Host : %HOST%
@@ -125,6 +125,19 @@ echo       Port : %BASKET_PORT%
 echo.
 
 start "Basket - API" cmd /k "cd /d "%BASKET_ROOT%" && call .venv\Scripts\activate.bat && python run.py"
+
+
+REM ============================================================
+REM  [7/7] Basket MongoDB
+REM ============================================================
+
+echo [7/7] Starting Basket Database...
+echo.
+echo       Path : %MONGODB_PATH%
+echo       Port : %BASKET_DB_PORT%
+echo.
+
+start "Basket - MongoDB" cmd /k "mongod --port %BASKET_DB_PORT% --dbpath C:\project-data\basket"
 
 
 REM ============================================================

@@ -10,7 +10,7 @@ class ModelManager:
         if states["embedding_model"] is None:
             states["embedding_model"] = SentenceTransformer(
                 EMBEDDING_MODEL_NAME,
-                device="cuda"
+                device="cpu"
             )
 
         return states["embedding_model"]
@@ -20,7 +20,7 @@ class ModelManager:
         if states["reranker_model"] is None:
             states["reranker_model"] = CrossEncoder(
                 RERANKER_MODEL_NAME,
-                device="cuda"
+                device="cpu"
             )
 
         return states["reranker_model"]
