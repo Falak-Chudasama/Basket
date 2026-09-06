@@ -22,12 +22,19 @@ config/local.yml
 models/*
 !models/.gitkeep
 
-fruits/*
-kiwi/*
-lychee/*
-plum/*
+# Fruit projects — ignore everything inside
+/fruits/*
+/kiwi/*
+/lychee/*
+/plum/*
 /quince/*
-!fruits/.gitkeep
+
+# Keep directory placeholders
+!/fruits/.gitkeep
+!/kiwi/.gitkeep
+!/lychee/.gitkeep
+!/plum/.gitkeep
+!/quince/.gitkeep
 
 .vscode/
 .idea/
