@@ -1,12 +1,14 @@
 from typing import Any
-from chromadb import Collection, Embeddings, Metadata
+from chromadb import Embeddings, Metadata
 
+from src.core.state import client
 from src.core.configs import VECTOR_DB_PATH, DEFAULT_VECTORDB_N
 
-class Store:
-    def __init__(self, collection: Collection):
-        self.path = VECTOR_DB_PATH
-        self.collection = collection
+
+class ChromaStore:
+    def __init__(self, collection_name: str):
+        self.path = VECTOR_DB_PATH,
+        self.collection = client.get_or_create_collection(collection_name)
 
     def create(
             self,

@@ -4,11 +4,13 @@ from typing import Any
 from src.core.state import memory_collection
 from src.core.configs import DEFAULT_VECTORDB_N
 from src.services.embedding.embedder import create_embedding
+from src.services.vectordb.chroma_store import ChromaStore
+
 
 class Memory:
     def __init__(self, application: str = "quince"):
         self.application = application
-        self.collection = memory_collection
+        self.collection = ChromaStore("memory")
 
     def add_memory(
             self,
