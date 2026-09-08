@@ -1,14 +1,15 @@
 from src.services.db.db import get_db
 
-class Commands:
+class Command:
     def __init__(self, db_name: str = "quince", application: str = "quince"):
         self.db = get_db(db_name)
         self.application = application,
         self.collection = self.db.create_collection("commands")
 
-    def add_one(self, command: str):
+    def add_one(self, command: str, is_temporary: bool = True):
         self.collection.insert_one({
-            "command": command
+            "command": command,
+            "is_temporary": is_temporary
         })
 
     def add_many(self, commands: list[str]):
@@ -25,6 +26,11 @@ class Commands:
     def delete(self, command: str):
         self.collection.delete_one({
             "command": command
+        })
+
+    def delete_all_temp(self):
+        self.collection.delete_many({
+            "is_temporary": True
         })
 
     def delete_all(self):
