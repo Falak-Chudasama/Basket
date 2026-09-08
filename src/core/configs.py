@@ -6,6 +6,8 @@ load_dotenv()
 MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:7005/")
 BASKET_DB: str = os.getenv("BASKET_DB", "basket")
 
+VECTOR_DB_PATH: str = "../../chromadb"
+
 EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
 RERANKER_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "jinaai/jina-reranker-v3.5")
 
@@ -26,6 +28,8 @@ DEFAULT_TTS_TEMP = 0.75
 STT_HOST = os.getenv("STT_HOST", "127.0.0.1")
 STT_PORT = int(os.getenv("STT_PORT", "7002"))
 DEFAULT_STT_MODEL = "Qwen3-ASR-0.6B-Q8_0"
+
+DEFAULT_VECTORDB_N = 20
 
 models = {
     "default": DEFAULT_LLM,
