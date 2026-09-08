@@ -1,5 +1,4 @@
-import time
-
+from src.utils.utils import get_datetime
 from src.core.configs import DEFAULT_VECTORDB_N
 from src.services.embedding.embedder import create_embedding
 from src.services.vectordb.chroma_store import ChromaStore
@@ -11,20 +10,22 @@ class Memory:
         self.collection = ChromaStore("memory")
 
     def add_memory(
-            self,
-            *,
-            memory_id: str,
-            document: str,
-            embedding: list[float] | None = None,
-            memory_type: str = "short_term",
-            source: str = "user"
-    ) -> None :
+        self,
+        *,
+        memory_id: str,
+        document: str,
+        source: str = "user",
+        embedding: list[float] | None = None,
+        memory_type: str = "short_term",
+    ) -> None:
+
         metadata = {
             "application": self.application,
             "memory_type": memory_type,
             "source": source,
-            "created_at": int(time.time())
+            "created_at": get_datetime()
         }
+
         if embedding is None:
             embedding = create_embedding(document)
 
@@ -36,11 +37,12 @@ class Memory:
         )
 
     def query_memory(
-            self,
-            *,
-            query: str,
-            n_result: int = DEFAULT_VECTORDB_N
+        self,
+        *,
+        query: str,
+        n_result: int = DEFAULT_VECTORDB_N
     ):
+
         query_embedding = create_embedding(query)
 
         return self.collection.query(
@@ -52,26 +54,37 @@ class Memory:
         )
 
     def clear_short_term(self) -> None:
+
         self.collection.delete(
             where={
                 "$and": [
-                    { "application": self.application },
-                    { "memory_type": "short_term" }
+                    {
+                        "application": self.application
+                    },
+                    {
+                        "memory_type": "short_term"
+                    }
                 ]
             }
         )
 
     def clear_long_term(self) -> None:
+
         self.collection.delete(
             where={
                 "$and": [
-                    { "application": self.application },
-                    { "memory_type": "long_term" }
+                    {
+                        "application": self.application
+                    },
+                    {
+                        "memory_type": "long_term"
+                    }
                 ]
             }
         )
 
     def clear_all(self) -> None:
+
         self.collection.delete(
             where={
                 "application": self.application

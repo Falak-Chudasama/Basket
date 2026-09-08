@@ -9,3 +9,5 @@ sentence-transformers
 chromadb
 pymongo
 rank_bm25
+langchain-text-splitters
+transformers
