@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 import httpx
 import json
+import time
 
 from src.core.configs import (
     LMS_HOST,
@@ -372,16 +373,76 @@ async def _get_loaded_instances():
     return loaded_instances
 
 
-async def _ensure_model_loaded():
+# ============================================================
+# MODEL-LOADED CACHE
+#
+# Basket's architecture keeps the LLM resident on the GPU for
+# the entire runtime (no load/unload swapping). Hitting LM
+# Studio's /api/v1/models endpoint on every single chat turn
+# just to re-confirm this is a fixed latency tax with no
+# payoff. Cache a positive result in-process and only pay the
+# HTTP round-trip again if a request actually fails.
+# ============================================================
+
+_model_loaded_cache: bool = False
+_model_loaded_cache_at: float = 0.0
+
+# Re-verify at most this often even on the "assume loaded" path,
+# in case the model was unloaded out-of-band (e.g. manually in
+# LM Studio's UI). Set to 0 to disable periodic re-checks.
+_MODEL_LOADED_REVALIDATE_SECONDS = 300.0
+
+
+def _invalidate_model_loaded_cache() -> None:
+    """Call this after any request fails so the next call re-checks."""
+
+    global _model_loaded_cache
+
+    _model_loaded_cache = False
+
+
+async def _ensure_model_loaded(force: bool = False):
     """
     Ensure that at least one model is loaded.
 
     If nothing is loaded, DEFAULT_LLM is loaded automatically.
+
+    This result is cached in-process: once we've confirmed a
+    model is loaded, subsequent calls skip the LM Studio round
+    trip entirely unless `force=True`, the cache has expired, or
+    a previous call explicitly invalidated it after a failure.
     """
+
+    global _model_loaded_cache
+    global _model_loaded_cache_at
+
+    now = time.monotonic()
+
+    cache_is_fresh = (
+        _MODEL_LOADED_REVALIDATE_SECONDS <= 0
+        or (now - _model_loaded_cache_at)
+        < _MODEL_LOADED_REVALIDATE_SECONDS
+    )
+
+    if (
+        not force
+        and _model_loaded_cache
+        and cache_is_fresh
+    ):
+
+        return {
+            "loaded": True,
+            "loaded_instances": None,
+            "loaded_default": False,
+            "cached": True,
+        }
 
     loaded_instances = await _get_loaded_instances()
 
     if loaded_instances:
+
+        _model_loaded_cache = True
+        _model_loaded_cache_at = now
 
         return {
             "loaded": True,
@@ -397,6 +458,8 @@ async def _ensure_model_loaded():
 
     if not loaded_instances:
 
+        _model_loaded_cache = False
+
         raise HTTPException(
             status_code=503,
             detail=(
@@ -404,6 +467,9 @@ async def _ensure_model_loaded():
                 f"DEFAULT_LLM '{DEFAULT_LLM}' could not be loaded."
             ),
         )
+
+    _model_loaded_cache = True
+    _model_loaded_cache_at = now
 
     return {
         "loaded": True,
@@ -589,6 +655,8 @@ async def streaming_completion(
         if http_client is not None:
             await http_client.aclose()
 
+        _invalidate_model_loaded_cache()
+
         raise HTTPException(
             status_code=503,
             detail="Unable to connect to LM Studio.",
@@ -624,6 +692,9 @@ async def streaming_completion(
 
         await response.aclose()
         await http_client.aclose()
+
+        if response.status_code in (404, 503):
+            _invalidate_model_loaded_cache()
 
         try:
 

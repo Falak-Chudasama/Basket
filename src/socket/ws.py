@@ -395,11 +395,58 @@ async def stt_stream(
     # END-TO-END PIPELINE
     # ========================================================
 
+    # ========================================================
+    # PARTIAL-STT REUSE THRESHOLD
+    #
+    # If the audio recorded after the last rolling partial STT
+    # pass is short enough, that partial's transcript already
+    # covers essentially the whole utterance and we can skip the
+    # redundant full-buffer re-transcription on stop entirely.
+    # If more than this much *new* audio arrived after the last
+    # partial (e.g. the user paused, then kept talking), fall
+    # back to a normal full transcribe so nothing gets dropped.
+    # ========================================================
+
+    MAX_STALE_TAIL_SECONDS = 1.5
+
+    def stale_tail_bytes() -> int:
+
+        config = require_voice_config()
+
+        return int(
+            MAX_STALE_TAIL_SECONDS
+            * config.sample_rate
+            * STREAM_SAMPLE_WIDTH
+        )
+
     async def run_pipeline() -> None:
 
         config_request = require_voice_config()
 
         pipeline_started_at = time.perf_counter()
+
+        # ----------------------------------------------------
+        # Decide whether the last rolling partial STT result
+        # can stand in for a fresh full-buffer transcription.
+        # ----------------------------------------------------
+
+        untranscribed_tail = (
+            len(audio_buffer) - last_partial_audio_bytes
+        )
+
+        reuse_partial = bool(
+            last_partial_text
+            and untranscribed_tail >= 0
+            and untranscribed_tail <= stale_tail_bytes()
+        )
+
+        logger.info(
+            "STT REUSE CHECK: last_partial_text=%r "
+            "untranscribed_tail_bytes=%d reuse_partial=%s",
+            last_partial_text,
+            untranscribed_tail,
+            reuse_partial,
+        )
 
         logger.info(
             "--------------------------------------------------"
@@ -549,6 +596,12 @@ async def stt_stream(
 
                 messages=list(
                     config_request.llm.messages
+                ),
+
+                final_transcript_hint=(
+                    last_partial_text
+                    if reuse_partial
+                    else None
                 ),
 
             ):

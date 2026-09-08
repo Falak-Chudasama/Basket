@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import io
 import logging
 import time
@@ -90,9 +91,10 @@ class TextChunker:
     def __init__(
         self,
         *,
-        min_chars: int = 24,
+        min_chars: int = 12,
         max_chars: int = 180,
         soft_boundary_min_chars: int = 55,
+        first_chunk_min_chars: int = 6,
     ):
 
         self.min_chars = min_chars
@@ -101,7 +103,16 @@ class TextChunker:
             soft_boundary_min_chars
         )
 
+        # The very first phrase of a response drives
+        # time-to-first-audio. Let it fire on a much shorter
+        # boundary than later chunks, which can afford to wait
+        # for more natural-length phrases.
+        self.first_chunk_min_chars = (
+            first_chunk_min_chars
+        )
+
         self._buffer = ""
+        self._emitted_first_chunk = False
 
     def add(
         self,
@@ -132,6 +143,8 @@ class TextChunker:
                 break
 
             chunks.append(candidate)
+
+            self._emitted_first_chunk = True
 
             self._buffer = self._buffer[
                 end_index + 1:
@@ -169,13 +182,19 @@ class TextChunker:
         self,
     ) -> tuple[int, str] | None:
 
+        active_min_chars = (
+            self.first_chunk_min_chars
+            if not self._emitted_first_chunk
+            else self.min_chars
+        )
+
         candidates = []
 
         for character in self.HARD_BOUNDARIES:
 
             index = self._buffer.find(character)
 
-            if index >= self.min_chars:
+            if index >= active_min_chars:
 
                 candidates.append(
                     (
@@ -191,11 +210,21 @@ class TextChunker:
                 key=lambda item: item[0],
             )
 
+        # The first chunk may also fire on a soft boundary
+        # (comma, semicolon, colon) using the same relaxed
+        # threshold, so a phrase like "Sure, I can help" reaches
+        # TTS immediately instead of waiting for a full sentence.
+        active_soft_min_chars = (
+            self.first_chunk_min_chars
+            if not self._emitted_first_chunk
+            else self.soft_boundary_min_chars
+        )
+
         for character in self.SOFT_BOUNDARIES:
 
             index = self._buffer.find(character)
 
-            if index >= self.soft_boundary_min_chars:
+            if index >= active_soft_min_chars:
 
                 candidates.append(
                     (
@@ -508,27 +537,148 @@ async def text_to_speech(
 # ============================================================
 
 
+
+# ============================================================
+# QUEUE SENTINEL
+# ============================================================
+
+# Marks end-of-stream on the phrase queue between the LLM
+# producer task and the TTS consumer below.
+_PHRASE_STREAM_DONE = object()
+
+
 async def llm_to_speech(
     *,
     messages: list[Message],
     config: VoicePipelineConfig,
 ) -> AsyncIterator[PipelineEvent]:
+    """
+    Streams the LLM response and feeds it to TTS phrase-by-phrase.
+
+    LLM decoding (GPU) and TTS synthesis (CPU) run concurrently
+    via a producer/consumer queue instead of alternating
+    sequentially. While phrase N is being synthesized by TTS,
+    the LLM keeps decoding tokens for phrase N+1 in the
+    background, so the two stages overlap instead of stalling
+    each other on every phrase boundary.
+    """
+
     chunker = TextChunker()
     full_text: list[str] = []
 
-    async for token in stream_llm(
-        messages=messages,
-        config=config,
-    ):
+    # Bounded so a slow TTS consumer applies backpressure to the
+    # LLM producer rather than letting it run arbitrarily far
+    # ahead and buffering unlimited phrases in memory.
+    phrase_queue: asyncio.Queue = asyncio.Queue(maxsize=8)
 
-        full_text.append(token)
+    # Events produced by the LLM-consuming producer task
+    # (llm.token, tts.started/tts.completed timing markers,
+    # llm.final) are handed back to the main generator through
+    # this second queue so they can still be yielded in the
+    # caller's async-generator style, interleaved with TTS audio
+    # as it becomes available.
+    event_queue: asyncio.Queue = asyncio.Queue()
 
-        yield PipelineEvent(
-            type="llm.token",
-            data=token,
-        )
+    producer_error: list[BaseException] = []
 
-        for phrase in chunker.add(token):
+    async def producer() -> None:
+
+        try:
+
+            async for token in stream_llm(
+                messages=messages,
+                config=config,
+            ):
+
+                full_text.append(token)
+
+                await event_queue.put(
+                    PipelineEvent(
+                        type="llm.token",
+                        data=token,
+                    )
+                )
+
+                for phrase in chunker.add(token):
+
+                    await phrase_queue.put(phrase)
+
+            final_phrase = chunker.flush()
+
+            if final_phrase:
+
+                await phrase_queue.put(final_phrase)
+
+            final_text = "".join(full_text).strip()
+
+            await event_queue.put(
+                PipelineEvent(
+                    type="llm.final",
+                    data=final_text,
+                )
+            )
+
+        except BaseException as exc:  # noqa: BLE001
+
+            producer_error.append(exc)
+
+        finally:
+
+            # Always signal completion, even on error, so the
+            # consumer loop below does not hang forever.
+            await phrase_queue.put(_PHRASE_STREAM_DONE)
+            await event_queue.put(_PHRASE_STREAM_DONE)
+
+    producer_task = asyncio.create_task(producer())
+
+    try:
+
+        producer_done = False
+        consumer_done = False
+
+        while not (producer_done and consumer_done):
+
+            # ----------------------------------------------
+            # Drain any llm.token / llm.final events that have
+            # accumulated so far without blocking on TTS.
+            # ----------------------------------------------
+
+            while not event_queue.empty():
+
+                item = event_queue.get_nowait()
+
+                if item is _PHRASE_STREAM_DONE:
+                    producer_done = True
+                    break
+
+                yield item
+
+            if consumer_done:
+                # Nothing left to synthesize; just keep draining
+                # remaining events until the producer signals done.
+                if producer_done:
+                    break
+
+                item = await event_queue.get()
+
+                if item is _PHRASE_STREAM_DONE:
+                    producer_done = True
+                else:
+                    yield item
+
+                continue
+
+            # ----------------------------------------------
+            # Consume the next phrase for TTS. This may block
+            # on phrase_queue while the LLM keeps decoding in
+            # the background, filling the queue concurrently.
+            # ----------------------------------------------
+
+            phrase = await phrase_queue.get()
+
+            if phrase is _PHRASE_STREAM_DONE:
+                consumer_done = True
+                continue
 
             yield PipelineEvent(
                 type="tts.started",
@@ -550,36 +700,29 @@ async def llm_to_speech(
                 data=phrase,
             )
 
-    final_phrase = chunker.flush()
+        # Drain any remaining events queued after the loop above
+        # exits (e.g. llm.final arriving after the last phrase).
+        while not event_queue.empty():
 
-    if final_phrase:
+            item = event_queue.get_nowait()
 
-        yield PipelineEvent(
-            type="tts.started",
-            data=final_phrase,
-        )
+            if item is not _PHRASE_STREAM_DONE:
+                yield item
 
-        async for audio_chunk in text_to_speech(
-            text=final_phrase,
-            config=config,
-        ):
+    finally:
 
-            yield PipelineEvent(
-                type="tts.audio",
-                data=audio_chunk,
-            )
+        if not producer_task.done():
 
-        yield PipelineEvent(
-            type="tts.completed",
-            data=final_phrase,
-        )
+            producer_task.cancel()
 
-    final_text = "".join(full_text).strip()
+            try:
+                await producer_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
-    yield PipelineEvent(
-        type="llm.final",
-        data=final_text,
-    )
+    if producer_error:
+
+        raise producer_error[0]
 
 
 # ============================================================
@@ -646,7 +789,27 @@ async def voice_to_voice(
     audio_stream: AsyncIterable[bytes],
     config: VoicePipelineConfig,
     messages: list[Message] | None = None,
+    final_transcript_hint: str | None = None,
+    tail_audio_hint: bytes | None = None,
 ) -> AsyncIterator[PipelineEvent]:
+    """
+    final_transcript_hint:
+        If the caller (the WS layer) already has a fresh rolling
+        partial-STT transcript covering essentially the whole
+        utterance, pass it here. When present, Basket skips the
+        redundant full-buffer re-transcription entirely and uses
+        this transcript directly, which removes a full STT pass
+        (often multiple seconds on CPU) from the critical path
+        on every turn.
+
+    tail_audio_hint:
+        Optional. If the caller only wants to transcribe the
+        *new* audio since the last partial (rather than reusing
+        the partial's text outright), pass just the tail bytes
+        here instead of `final_transcript_hint`. Basket will run
+        STT on this short tail only, instead of the full buffer.
+        Ignored if `final_transcript_hint` is provided.
+    """
 
     pipeline_started_at = time.perf_counter()
 
@@ -669,7 +832,7 @@ async def voice_to_voice(
 
             audio_buffer.extend(chunk)
 
-    if not audio_buffer:
+    if not audio_buffer and not final_transcript_hint:
 
         raise HTTPException(
             status_code=400,
@@ -684,10 +847,28 @@ async def voice_to_voice(
         type="stt.started",
     )
 
-    transcript = await speech_to_text(
-        audio=bytes(audio_buffer),
-        prompt=config.stt_prompt,
-    )
+    if final_transcript_hint is not None:
+
+        # Reuse the rolling partial-STT result computed while the
+        # user was still speaking. No blocking full-buffer
+        # transcription needed on the critical path.
+        transcript = final_transcript_hint.strip()
+
+    elif tail_audio_hint is not None:
+
+        # Only transcribe the short tail of audio that the
+        # rolling partial pass hasn't already covered.
+        transcript = await speech_to_text(
+            audio=tail_audio_hint,
+            prompt=config.stt_prompt,
+        )
+
+    else:
+
+        transcript = await speech_to_text(
+            audio=bytes(audio_buffer),
+            prompt=config.stt_prompt,
+        )
 
     yield PipelineEvent(
         type="stt.final",
