@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, Callable
 
 from rank_bm25 import BM25Okapi
 
@@ -84,7 +84,8 @@ class BM25:
         self,
         *,
         query: str,
-        n_result: int = DEFAULT_BM25_N
+        n_result: int = DEFAULT_BM25_N,
+        session_id: str | None = None,
     ) -> list[dict[str, Any]]:
 
         if self.index is None:
@@ -100,7 +101,16 @@ class BM25:
             range(len(scores)),
             key=lambda i: scores[i],
             reverse=True
-        )[:n_result]
+        )
+
+        if session_id is not None:
+            ranked_indices = [
+                i
+                for i in ranked_indices
+                if self.metadatas[i].get("session_id") == session_id
+            ]
+
+        ranked_indices = ranked_indices[:n_result]
 
         return [
             {
@@ -128,5 +138,27 @@ class BM25:
         self.ids.pop(index)
         self.documents.pop(index)
         self.metadatas.pop(index)
+
+        self._rebuild()
+
+    def delete_where(
+        self,
+        *,
+        predicate: Callable[[dict[str, Any]], bool]
+    ) -> None:
+
+        kept = [
+            (document_id, document, metadata)
+            for document_id, document, metadata in zip(
+                self.ids,
+                self.documents,
+                self.metadatas,
+            )
+            if not predicate(metadata)
+        ]
+
+        self.ids = [item[0] for item in kept]
+        self.documents = [item[1] for item in kept]
+        self.metadatas = [item[2] for item in kept]
 
         self._rebuild()

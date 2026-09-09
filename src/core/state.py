@@ -20,8 +20,11 @@ lychee_db = get_db("lychee")
 # QUINCE SERVICES
 # ============================================================
 
+quince_bm25_memory = BM25()
+
 quince_memory = Memory(
-    application="quince"
+    application="quince",
+    bm25_memory=quince_bm25_memory
 )
 
 quince_commands = Command(
@@ -34,7 +37,6 @@ quince_chats = Chat(
     application="quince"
 )
 
-quince_bm25_memory = BM25()
 
 
 # ============================================================
@@ -53,4 +55,6 @@ states = {
     "quince_chats": quince_chats,
     "quince_commands": quince_commands,
     "quince_bm25_memory": quince_bm25_memory,
+    "quince_active_session": False,
+    "quince_active_session_id": None
 }

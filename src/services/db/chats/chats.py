@@ -83,6 +83,17 @@ class Chat:
             ]
         )
 
+    def get_chat(
+        self,
+        session_id: str
+    ):
+        return self.collection.find_one(
+            {
+                "session_id": session_id,
+                "application": self.application
+            }
+        )
+
     def get_all(self):
         return self.collection.find(
             {

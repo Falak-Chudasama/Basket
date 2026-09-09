@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.core.configs import (
@@ -36,24 +38,28 @@ def chunk_text(
     source_type: str,
     application_semantic_memory,
     application_bm25_memory,
-    application_chats
+    application_chats,
+    session_id: str | None = None,
 ):
-    current_chat = (
-        application_chats.get_current_chat()
-    )
-
-    if current_chat is None:
-        raise ValueError(
-            "No current chat session exists."
+    if session_id is None:
+        current_chat = (
+            application_chats.get_current_chat()
         )
 
-    session_id = current_chat[
-        "session_id"
-    ]
+        if current_chat is None:
+            raise ValueError(
+                "No current chat session exists."
+            )
+
+        session_id = current_chat[
+            "session_id"
+        ]
 
     chunks = splitter.split_text(
         text
     )
+
+    chunk_group_id = uuid4().hex
 
     full_chunks = []
 
@@ -64,6 +70,7 @@ def chunk_text(
         chunk_id = (
             f"{session_id}:"
             f"{role}:"
+            f"{chunk_group_id}:"
             f"{chunk_index}"
         )
 
@@ -81,7 +88,8 @@ def chunk_text(
             memory_id=chunk_id,
             document=chunk_text_value,
             source=role,
-            memory_type=memory_type
+            memory_type=memory_type,
+            session_id=session_id,
         )
 
         application_bm25_memory.upsert(
@@ -104,7 +112,8 @@ def chunk(
     application: str = "quince",
     role: str = "user",
     memory_type: str = "short_term",
-    source_type: str = "conversation"
+    source_type: str = "conversation",
+    session_id: str | None = None,
 ):
     if application == "quince":
 
@@ -116,7 +125,8 @@ def chunk(
             source_type=source_type,
             application_semantic_memory=quince_memory,
             application_bm25_memory=quince_bm25_memory,
-            application_chats=quince_chats
+            application_chats=quince_chats,
+            session_id=session_id,
         )
 
     raise ValueError(

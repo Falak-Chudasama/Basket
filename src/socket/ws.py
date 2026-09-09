@@ -29,6 +29,11 @@ from src.services.chat.chat_pipeline import (
     VoicePipelineConfig,
     voice_to_voice,
 )
+from src.core.state import states
+from src.services.chat.session_manager import (
+    activate_quince_session,
+    deactivate_quince_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -993,6 +998,15 @@ async def stt_stream(
                 if application is None:
                     application = request.application
 
+                # Quince becomes active on the first use of the
+                # application during this WebSocket connection.
+                if request.application == "quince":
+                    activate_quince_session()
+                    logger.info(
+                        "QUINCE ACTIVE SESSION: id=%r",
+                        states.get("quince_active_session_id"),
+                    )
+
                 # ------------------------------------------------
                 # ACCEPT START
                 # ------------------------------------------------
@@ -1300,6 +1314,49 @@ async def stt_stream(
                 continue
 
             # =================================================
+            # SESSION
+            # =================================================
+
+            if message_type == "session":
+
+                if application != "quince":
+                    await send_error(
+                        "unsupported_session_application",
+                        "Session state is currently supported for Quince only.",
+                    )
+                    continue
+
+                active = payload.get("active")
+
+                if not isinstance(active, bool):
+                    await send_error(
+                        "invalid_session_state",
+                        "Session message requires boolean 'active'.",
+                    )
+                    continue
+
+                if active:
+                    session_id = activate_quince_session()
+                    await send_json(
+                        {
+                            "type": "session.active",
+                            "active": True,
+                            "session_id": session_id,
+                        }
+                    )
+                else:
+                    deactivate_quince_session()
+                    await send_json(
+                        {
+                            "type": "session.active",
+                            "active": False,
+                            "session_id": None,
+                        }
+                    )
+
+                continue
+
+            # =================================================
             # PING
             # =================================================
 
@@ -1441,6 +1498,12 @@ async def stt_stream(
         ):
 
             partial_task.cancel()
+
+        if application == "quince":
+            deactivate_quince_session()
+            logger.info(
+                "QUINCE SESSION DEACTIVATED"
+            )
 
         logger.info(
             "VOICE WS SESSION CLOSED: client=%s application=%r",
