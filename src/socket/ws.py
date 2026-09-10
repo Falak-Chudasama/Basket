@@ -30,6 +30,9 @@ from src.services.chat.chat_pipeline import (
     voice_to_voice,
 )
 from src.core.state import states
+from src.core.configs import MCP_WS_URL, MCP_CONNECT_TIMEOUT
+from src.services.mcp.client import MCPClient
+from src.core.trace import new_trace_id, set_trace_id
 from src.services.chat.session_manager import (
     activate_quince_session,
     deactivate_quince_session,
@@ -49,13 +52,6 @@ WS_PATH: Final[str] = "/ws"
 
 
 def _json_event(event: PipelineEvent) -> dict[str, Any]:
-    """
-    Convert an internal pipeline event into a JSON-safe event.
-
-    Binary TTS audio is handled separately by the WebSocket
-    transport.
-    """
-
     return {
         "type": event.type,
         "data": event.data,
@@ -71,26 +67,10 @@ def _json_event(event: PipelineEvent) -> dict[str, Any]:
 async def stt_stream(
     websocket: WebSocket,
 ) -> None:
-    """
-    Basket voice-to-voice WebSocket transport.
-
-    Client -> Server:
-
-        {"type":"start", "application":"quince", ...}
-        <binary PCM16 mono 16 kHz frames>
-        ...
-        {"type":"stop", "application":"quince"}
-
-    Optional:
-
-        {"type":"cancel", "application":"quince"}
-        {"type":"ping", "application":"quince"}
-
-    The WebSocket transports data and delegates the actual
-    STT -> LLM -> TTS pipeline to chat_pipeline.py.
-    """
 
     await websocket.accept()
+    connection_trace = new_trace_id()
+    set_trace_id(connection_trace)
 
     logger.info(
         "=================================================="
@@ -107,12 +87,6 @@ async def stt_stream(
         "=================================================="
     )
 
-    # A brand-new WS connection always means a brand-new Quince chat.
-    # This must happen exactly once here, at connection time — NOT on
-    # every "start" message (that would fragment one conversation
-    # across many chats) and NOT by resuming whatever chat happened to
-    # be most recent in the database (that would leak the previous
-    # connection's conversation into this one).
     new_session_id = start_new_quince_session()
 
     logger.info(
@@ -120,13 +94,15 @@ async def stt_stream(
         new_session_id,
     )
 
+    mcp = MCPClient(MCP_WS_URL, connect_timeout=MCP_CONNECT_TIMEOUT)
+    try:
+        await mcp.connect()
+    except Exception:
+        # MCP is optional at transport level; normal voice turns still work.
+        pass
+
     started = False
-
-    # Application identity belongs to the WebSocket session.
-    # It is established by the first valid start message.
     application: str | None = None
-
-    # Voice configuration belongs to the current voice turn.
     voice_config: VoiceStartRequest | None = None
 
     # --------------------------------------------------------
@@ -140,9 +116,7 @@ async def stt_stream(
     # --------------------------------------------------------
 
     last_partial_audio_bytes = 0
-
     partial_task: asyncio.Task | None = None
-
     last_partial_text = ""
 
     # --------------------------------------------------------
@@ -262,25 +236,19 @@ async def stt_stream(
         )
 
         if len(rolling) < min_audio_bytes():
-
             logger.info(
                 "PARTIAL STT: skipped, insufficient audio"
             )
-
             return
 
         try:
-
             import httpx
-
             logger.info(
                 "PARTIAL STT: calling _stream_transcribe_window()"
             )
-
             async with httpx.AsyncClient(
                 timeout=_timeout()
             ) as client:
-
                 result = (
                     await _stream_transcribe_window(
                         client,
@@ -295,7 +263,6 @@ async def stt_stream(
                 time.perf_counter()
                 - partial_started_at,
             )
-
             text = str(
                 result.get(
                     "text",
@@ -313,9 +280,7 @@ async def stt_stream(
                 text
                 and text != last_partial_text
             ):
-
                 last_partial_text = text
-
                 await send_json(
                     {
                         "type": "stt.partial",
@@ -334,30 +299,24 @@ async def stt_stream(
             )
 
         except asyncio.CancelledError:
-
             logger.warning(
                 "PARTIAL STT CANCELLED"
             )
-
             raise
 
         except Exception as exc:
-
             logger.exception(
                 "PARTIAL STT FAILED after %.3fs",
                 time.perf_counter()
                 - partial_started_at,
             )
-
             await send_error(
                 "asr_partial_failed",
                 str(exc),
             )
 
     def maybe_start_partial_stt() -> None:
-
         nonlocal partial_task
-
         config = require_voice_config()
 
         if not config.stream:
@@ -388,20 +347,14 @@ async def stt_stream(
         def clear_partial_task(
             task: asyncio.Task,
         ) -> None:
-
             nonlocal partial_task
-
             partial_task = None
 
             if task.cancelled():
                 return
-
             try:
-
                 task.result()
-
             except Exception:
-
                 logger.exception(
                     "PARTIAL STT TASK CRASHED"
                 )
@@ -412,20 +365,6 @@ async def stt_stream(
 
     # ========================================================
     # END-TO-END PIPELINE
-    # ========================================================
-
-    # ========================================================
-    # FINAL STT
-    #
-    # Accuracy-first: the final transcript on `stop` is ALWAYS a
-    # fresh transcription of the complete audio buffer. Live
-    # rolling partial STT (run_partial_stt) still streams
-    # `stt.partial` events for UI feedback, but it only ever
-    # sees a bounded trailing window and is rate-limited, so it
-    # can miss words spoken right before the user stops talking.
-    # It is passed into the pipeline as a prompt hint only,
-    # never as a substitute for the final transcript — this
-    # keeps latency low without ever dropping trailing audio.
     # ========================================================
 
     async def run_pipeline() -> None:
@@ -504,60 +443,18 @@ async def stt_stream(
                 )
 
         pipeline_config = VoicePipelineConfig(
-
-            # ------------------------------------------------
-            # STT
-            # ------------------------------------------------
-
             stt_prompt=config_request.prompt,
-
-            # ------------------------------------------------
-            # LLM
-            # ------------------------------------------------
-
-            system_prompt=(
-                config_request.llm.system_prompt
-            ),
-
-            model=(
-                config_request.llm.model
-            ),
-
-            temperature=(
-                config_request.llm.temperature
-            ),
-
-            top_p=(
-                config_request.llm.top_p
-            ),
-
-            max_tokens=(
-                config_request.llm.max_tokens
-            ),
-
-            stop=(
-                config_request.llm.stop
-            ),
-
-            seed=(
-                config_request.llm.seed
-            ),
-
-            abstracted=(
-                config_request.llm.abstracted
-            ),
-
-            # ------------------------------------------------
-            # TTS
-            # ------------------------------------------------
-
-            voice=(
-                config_request.tts.voice
-            ),
-
-            tts_temperature=(
-                config_request.tts.temperature
-            ),
+            system_prompt=config_request.llm.system_prompt,
+            model=config_request.llm.model,
+            temperature=config_request.llm.temperature,
+            top_p=config_request.llm.top_p,
+            max_tokens=config_request.llm.max_tokens,
+            stop=config_request.llm.stop,
+            seed=config_request.llm.seed,
+            abstracted=config_request.llm.abstracted,
+            voice=config_request.tts.voice,
+            tts_temperature=config_request.tts.temperature,
+            mcp_client=mcp,
         )
 
         logger.info(
@@ -585,6 +482,8 @@ async def stt_stream(
             ):
 
                 event_count += 1
+                logger.debug("WS PIPELINE YIELD type=%s data_type=%s", event.type, type(event.data).__name__)
+
                 if event.type == "tts.audio":
                     audio = event.data
                     if audio is None:
@@ -1072,6 +971,13 @@ async def stt_stream(
                     voice_config.tts.temperature,
                 )
 
+                if mcp.is_connected:
+                    try:
+                        await mcp.reset()
+                    except Exception:
+                        logger.warning("MCP reset failed on turn start; continuing without MCP.", exc_info=True)
+                        await mcp.close()
+
                 await send_json(
                     {
                         "type": "started",
@@ -1452,12 +1358,10 @@ async def stt_stream(
             pass
 
     finally:
-
         if (
             partial_task is not None
             and not partial_task.done()
         ):
-
             partial_task.cancel()
 
         if application == "quince":
@@ -1465,6 +1369,8 @@ async def stt_stream(
             logger.info(
                 "QUINCE SESSION DEACTIVATED"
             )
+
+        await mcp.close()
 
         logger.info(
             "VOICE WS SESSION CLOSED: client=%s application=%r",

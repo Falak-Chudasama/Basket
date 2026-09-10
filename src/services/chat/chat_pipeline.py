@@ -5,7 +5,10 @@ import logging
 import time
 import wave
 from dataclasses import dataclass
-from typing import AsyncIterable, AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterable, AsyncIterator
+
+if TYPE_CHECKING:
+    from src.services.mcp.client import MCPClient
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import Headers
@@ -51,6 +54,7 @@ class VoicePipelineConfig:
 
     # LLM
     system_prompt: str | None = None
+    command_system_prompt: str | None = None
     model: str | None = None
     temperature: float | None = 0.7
     top_p: float | None = 1.0
@@ -62,6 +66,9 @@ class VoicePipelineConfig:
     # TTS
     voice: str = "jane"
     tts_temperature: float = 0.5
+
+    # Agent/MCP
+    mcp_client: MCPClient | None = None
 
 
 # ============================================================
@@ -128,11 +135,42 @@ def _build_retrieval_context(
     )
 
 
+def _build_command_system_prompt() -> str | None:
+    """Build the dedicated system message containing all saved commands."""
+    try:
+        from src.core.state import quince_commands
+        commands = [
+            item for item in quince_commands.get_all()
+            if str(item.get("command", "")).strip()
+        ]
+    except Exception:
+        logger.exception("COMMAND PROMPT LOAD FAILED")
+        return None
+
+    if not commands:
+        return None
+
+    lines = [
+        "SAVED QUINCE COMMANDS",
+        "These are persistent user-defined commands. Treat them as executable user intent only when the current request clearly invokes one. Do not invent or hallucinate commands.",
+    ]
+    for index, item in enumerate(commands, start=1):
+        kind = "temporary" if bool(item.get("is_temporary", False)) else "persistent"
+        lines.append(f"[{index}] {item.get('command')} ({kind})")
+
+    return "\n".join(lines)
+
+
 def _apply_retrieval(
     *,
     query: str,
     config: VoicePipelineConfig,
 ) -> list[dict[str, object]]:
+
+    # Commands are intentionally not part of RAG. They are always injected as
+    # their own system message so retrieval cannot dilute or misclassify them
+    # as ordinary memory.
+    config.command_system_prompt = _build_command_system_prompt()
 
     session_id = states.get(
         "quince_active_session_id"
@@ -143,30 +181,16 @@ def _apply_retrieval(
         session_id=session_id,
     )
 
-    context = _build_retrieval_context(
-        results
-    )
-
+    context = _build_retrieval_context(results)
     if context:
-
-        base_prompt = (
-            config.system_prompt or ""
-        ).strip()
-
-        if base_prompt:
-
-            config.system_prompt = (
-                f"{base_prompt}\n\n{context}"
-            )
-
-        else:
-
-            config.system_prompt = context
+        base_prompt = (config.system_prompt or "").strip()
+        config.system_prompt = f"{base_prompt}\n\n{context}".strip() if base_prompt else context
 
     logger.info(
-        "RAG COMPLETE query=%r results=%d",
+        "RAG COMPLETE query=%r results=%d long_term_enabled=%s",
         query,
         len(results),
+        True,
     )
 
     return results
@@ -224,10 +248,10 @@ class TextChunker:
     def __init__(
         self,
         *,
-        min_chars: int = 60,
-        max_chars: int = 400,
-        soft_boundary_min_chars: int = 80,
-        first_chunk_min_chars: int = 6,
+        min_chars: int = 200,
+        max_chars: int = 800,
+        soft_boundary_min_chars: int = 500,
+        first_chunk_min_chars: int = 100,
     ):
 
         self.min_chars = min_chars
@@ -510,11 +534,8 @@ async def stream_llm(
 
     started_at = time.perf_counter()
 
-    logger.info(
-        "LLM START model=%r messages=%d",
-        config.model,
-        len(messages),
-    )
+    logger.info("LLM START model=%r messages=%d stream=True", config.model, len(messages))
+    logger.debug("LLM REQUEST messages=%r tools=%r", messages, getattr(config, "mcp_client", None).state.visible_tools if config.mcp_client else None)
 
     request = ChatRequest(
         model=config.model,
@@ -526,6 +547,7 @@ async def stream_llm(
         stop=config.stop,
         seed=config.seed,
         system_prompt=config.system_prompt,
+        command_system_prompt=config.command_system_prompt,
         abstracted=config.abstracted,
     )
 
@@ -579,6 +601,7 @@ async def stream_llm(
                 continue
 
             token_count += 1
+            logger.debug("LLM STREAM TOKEN #%d=%r", token_count, token)
 
             yield token
 
@@ -592,7 +615,7 @@ async def stream_llm(
         raise
 
     logger.info(
-        "LLM COMPLETE in %.3fs tokens=%d",
+        "LLM COMPLETE in %.3fs stream_tokens=%d",
         time.perf_counter() - started_at,
         token_count,
     )
@@ -645,6 +668,7 @@ async def text_to_speech(
             if not audio_chunk:
                 continue
 
+            logger.debug("TTS AUDIO CHUNK bytes=%d", len(audio_chunk))
             yield audio_chunk
 
     except Exception:
@@ -946,8 +970,18 @@ async def text_to_voice(
         },
     )
 
+    agent_messages = conversation
+    if config.mcp_client is not None:
+        from src.services.mcp.agent import resolve_agent_turn
+        agent_turn = await resolve_agent_turn(
+            messages=conversation,
+            config=config,
+            mcp=config.mcp_client,
+        )
+        agent_messages = agent_turn.messages
+
     async for event in llm_to_speech(
-        messages=conversation,
+        messages=agent_messages,
         config=config,
     ):
 
@@ -1111,11 +1145,21 @@ async def voice_to_voice(
     )
 
     # --------------------------------------------------------
-    # LLM -> TTS
+    # AGENT -> LLM -> TTS
     # --------------------------------------------------------
 
+    agent_messages = conversation
+    if config.mcp_client is not None:
+        from src.services.mcp.agent import resolve_agent_turn
+        agent_turn = await resolve_agent_turn(
+            messages=conversation,
+            config=config,
+            mcp=config.mcp_client,
+        )
+        agent_messages = agent_turn.messages
+
     async for event in llm_to_speech(
-        messages=conversation,
+        messages=agent_messages,
         config=config,
     ):
         if event.type == "llm.final":

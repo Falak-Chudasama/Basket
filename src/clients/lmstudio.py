@@ -3,6 +3,8 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 import httpx
 import json
+import logging
+import time
 import time
 
 from src.core.configs import (
@@ -63,6 +65,9 @@ client = OpenAI(
 SYSTEM_PROMPT = ""
 
 
+logger = logging.getLogger("basket.lmstudio")
+
+
 # ============================================================
 # HTTP HELPERS
 # ============================================================
@@ -104,6 +109,12 @@ def _build_messages(request: ChatRequest):
         }
     ]
 
+    if request.command_system_prompt and request.command_system_prompt.strip():
+        messages.append({
+            "role": "system",
+            "content": request.command_system_prompt.strip(),
+        })
+
     for message in request.messages:
 
         # Basket owns the system prompt.
@@ -111,12 +122,19 @@ def _build_messages(request: ChatRequest):
         if message.role == "system":
             continue
 
-        messages.append(
-            {
-                "role": message.role,
-                "content": message.content,
-            }
-        )
+        payload = {
+            "role": message.role,
+            "content": message.content,
+        }
+
+        if message.tool_calls is not None:
+            payload["tool_calls"] = message.tool_calls
+        if message.tool_call_id is not None:
+            payload["tool_call_id"] = message.tool_call_id
+        if message.name is not None:
+            payload["name"] = message.name
+
+        messages.append(payload)
 
     return messages
 
@@ -147,6 +165,12 @@ def _build_lm_payload(request: ChatRequest):
 
     if request.seed is not None:
         payload["seed"] = request.seed
+
+    if request.tools is not None:
+        payload["tools"] = request.tools
+
+    if request.tool_choice is not None:
+        payload["tool_choice"] = request.tool_choice
 
     return payload
 
@@ -486,9 +510,12 @@ async def non_streaming_completion(
     request: ChatRequest,
 ):
 
-    await _ensure_model_loaded()
-
+    started = time.perf_counter()
+    logger.info("LM NONSTREAM START model=%r messages=%d tools=%d", request.model, len(request.messages), len(request.tools or []))
     payload = _build_lm_payload(request)
+    logger.debug("LM NONSTREAM PAYLOAD=%r", payload)
+
+    await _ensure_model_loaded()
 
     payload["stream"] = False
 
@@ -595,6 +622,8 @@ async def non_streaming_completion(
         )
 
     response_data = response.json()
+    logger.info("LM NONSTREAM COMPLETE elapsed=%.3fs status=%d", time.perf_counter() - started, response.status_code)
+    logger.debug("LM NONSTREAM RESPONSE=%r", response_data)
 
     # ========================================================
     # ABSTRACTED RESPONSE
@@ -621,9 +650,12 @@ async def streaming_completion(
     request: ChatRequest,
 ):
 
-    await _ensure_model_loaded()
-
+    started = time.perf_counter()
+    logger.info("LM STREAM START model=%r messages=%d tools=%d", request.model, len(request.messages), len(request.tools or []))
     payload = _build_lm_payload(request)
+    logger.debug("LM STREAM PAYLOAD=%r", payload)
+
+    await _ensure_model_loaded()
 
     payload["stream"] = True
 
@@ -761,8 +793,10 @@ async def streaming_completion(
                 async for chunk in response.aiter_raw():
 
                     if chunk:
+                        logger.debug("LM STREAM RAW CHUNK bytes=%d", len(chunk))
                         yield chunk
 
+                logger.info("LM STREAM COMPLETE elapsed=%.3fs mode=raw", time.perf_counter() - started)
                 return
 
             # ------------------------------------------------
@@ -808,9 +842,10 @@ async def streaming_completion(
                     )
 
                 except json.JSONDecodeError:
-
+                    logger.debug("LM STREAM SSE NON_JSON data=%r", data)
                     continue
 
+                logger.debug("LM STREAM SSE CHUNK=%r", chunk_data)
                 text = _extract_stream_text(
                     chunk_data
                 )
@@ -826,6 +861,7 @@ async def streaming_completion(
 
         finally:
 
+            logger.info("LM STREAM CLOSED elapsed=%.3fs", time.perf_counter() - started)
             await response.aclose()
             await http_client.aclose()
 

@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+MCP_WS_URL = os.getenv("MCP_WS_URL", "ws://127.0.0.1:7100/mcp")
+MCP_CONNECT_TIMEOUT = float(os.getenv("MCP_CONNECT_TIMEOUT", "5"))
+
 MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:7005/")
 BASKET_DB: str = os.getenv("BASKET_DB", "basket")
 

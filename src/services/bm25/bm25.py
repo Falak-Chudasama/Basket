@@ -104,10 +104,16 @@ class BM25:
         )
 
         if session_id is not None:
+            # Session retrieval includes durable memories plus the current
+            # session's short-term memories. Long-term records intentionally
+            # do not have a session_id.
             ranked_indices = [
                 i
                 for i in ranked_indices
-                if self.metadatas[i].get("session_id") == session_id
+                if (
+                    self.metadatas[i].get("memory_type") == "long_term"
+                    or self.metadatas[i].get("session_id") == session_id
+                )
             ]
 
         ranked_indices = ranked_indices[:n_result]
