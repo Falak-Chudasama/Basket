@@ -33,6 +33,7 @@ from src.core.state import states
 from src.services.chat.session_manager import (
     activate_quince_session,
     deactivate_quince_session,
+    start_new_quince_session,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,19 @@ async def stt_stream(
     )
     logger.info(
         "=================================================="
+    )
+
+    # A brand-new WS connection always means a brand-new Quince chat.
+    # This must happen exactly once here, at connection time — NOT on
+    # every "start" message (that would fragment one conversation
+    # across many chats) and NOT by resuming whatever chat happened to
+    # be most recent in the database (that would leak the previous
+    # connection's conversation into this one).
+    new_session_id = start_new_quince_session()
+
+    logger.info(
+        "QUINCE NEW SESSION CREATED ON CONNECT: id=%r",
+        new_session_id,
     )
 
     started = False
@@ -401,57 +415,24 @@ async def stt_stream(
     # ========================================================
 
     # ========================================================
-    # PARTIAL-STT REUSE THRESHOLD
+    # FINAL STT
     #
-    # If the audio recorded after the last rolling partial STT
-    # pass is short enough, that partial's transcript already
-    # covers essentially the whole utterance and we can skip the
-    # redundant full-buffer re-transcription on stop entirely.
-    # If more than this much *new* audio arrived after the last
-    # partial (e.g. the user paused, then kept talking), fall
-    # back to a normal full transcribe so nothing gets dropped.
+    # Accuracy-first: the final transcript on `stop` is ALWAYS a
+    # fresh transcription of the complete audio buffer. Live
+    # rolling partial STT (run_partial_stt) still streams
+    # `stt.partial` events for UI feedback, but it only ever
+    # sees a bounded trailing window and is rate-limited, so it
+    # can miss words spoken right before the user stops talking.
+    # It is passed into the pipeline as a prompt hint only,
+    # never as a substitute for the final transcript — this
+    # keeps latency low without ever dropping trailing audio.
     # ========================================================
-
-    MAX_STALE_TAIL_SECONDS = 1.5
-
-    def stale_tail_bytes() -> int:
-
-        config = require_voice_config()
-
-        return int(
-            MAX_STALE_TAIL_SECONDS
-            * config.sample_rate
-            * STREAM_SAMPLE_WIDTH
-        )
 
     async def run_pipeline() -> None:
 
         config_request = require_voice_config()
 
         pipeline_started_at = time.perf_counter()
-
-        # ----------------------------------------------------
-        # Decide whether the last rolling partial STT result
-        # can stand in for a fresh full-buffer transcription.
-        # ----------------------------------------------------
-
-        untranscribed_tail = (
-            len(audio_buffer) - last_partial_audio_bytes
-        )
-
-        reuse_partial = bool(
-            last_partial_text
-            and untranscribed_tail >= 0
-            and untranscribed_tail <= stale_tail_bytes()
-        )
-
-        logger.info(
-            "STT REUSE CHECK: last_partial_text=%r "
-            "untranscribed_tail_bytes=%d reuse_partial=%s",
-            last_partial_text,
-            untranscribed_tail,
-            reuse_partial,
-        )
 
         logger.info(
             "--------------------------------------------------"
@@ -599,9 +580,7 @@ async def stt_stream(
                     config_request.llm.messages
                 ),
                 final_transcript_hint=(
-                    last_partial_text
-                    if reuse_partial
-                    else None
+                    last_partial_text or None
                 ),
             ):
 
@@ -978,12 +957,14 @@ async def stt_stream(
                 if application is None:
                     application = request.application
 
-                # Quince becomes active on the first use of the
-                # application during this WebSocket connection.
+                # The chat for this connection was already created
+                # once in start_new_quince_session() at WS connect
+                # time. Each new turn within the SAME connection just
+                # resumes that same chat — it must not create another.
                 if request.application == "quince":
                     activate_quince_session()
                     logger.info(
-                        "QUINCE ACTIVE SESSION: id=%r",
+                        "QUINCE SESSION RESUMED FOR TURN: id=%r",
                         states.get("quince_active_session_id"),
                     )
 

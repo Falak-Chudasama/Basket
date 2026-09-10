@@ -1025,14 +1025,38 @@ async def voice_to_voice(
         type="stt.started",
     )
 
-    if final_transcript_hint is not None:
-        transcript = final_transcript_hint.strip()
+    # Accuracy-first: the full audio buffer is always the source of
+    # truth for the final transcript. A rolling partial-STT pass only
+    # ever sees a bounded trailing window and is gated to run at most
+    # once every ~1.5s, so it can never be guaranteed to include the
+    # last words spoken before the user releases the mic — reusing it
+    # in place of a fresh transcription is what was silently dropping
+    # trailing audio. `final_transcript_hint` (the latest partial) is
+    # instead passed to the STT backend as a *prompt bias* only: it
+    # nudges decoding toward the words already seen without replacing
+    # the transcript, so latency stays low (the backend can lean on
+    # that context) without sacrificing correctness on the tail.
+    if audio_buffer:
+        stt_prompt = config.stt_prompt
+        if final_transcript_hint:
+            hint = final_transcript_hint.strip()
+            if hint:
+                stt_prompt = (
+                    f"{stt_prompt}\n{hint}"
+                    if stt_prompt
+                    else hint
+                )
 
-    elif tail_audio_hint is not None:
         transcript = await speech_to_text(
-            audio=tail_audio_hint,
-            prompt=config.stt_prompt,
+            audio=bytes(audio_buffer),
+            prompt=stt_prompt,
         )
+
+    elif final_transcript_hint is not None:
+        # No raw audio at all was provided (e.g. a text-only caller
+        # supplying a pre-computed transcript) — nothing to fall back
+        # to, so use the hint as-is.
+        transcript = final_transcript_hint.strip()
 
     else:
         transcript = await speech_to_text(
