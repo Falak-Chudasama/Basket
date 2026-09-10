@@ -224,9 +224,9 @@ class TextChunker:
     def __init__(
         self,
         *,
-        min_chars: int = 12,
-        max_chars: int = 180,
-        soft_boundary_min_chars: int = 55,
+        min_chars: int = 60,
+        max_chars: int = 400,
+        soft_boundary_min_chars: int = 80,
         first_chunk_min_chars: int = 6,
     ):
 
@@ -236,10 +236,7 @@ class TextChunker:
             soft_boundary_min_chars
         )
 
-        # The very first phrase of a response drives
-        # time-to-first-audio. Let it fire on a much shorter
-        # boundary than later chunks, which can afford to wait
-        # for more natural-length phrases.
+
         self.first_chunk_min_chars = (
             first_chunk_min_chars
         )
@@ -995,25 +992,6 @@ async def voice_to_voice(
     final_transcript_hint: str | None = None,
     tail_audio_hint: bytes | None = None,
 ) -> AsyncIterator[PipelineEvent]:
-    """
-    final_transcript_hint:
-        If the caller (the WS layer) already has a fresh rolling
-        partial-STT transcript covering essentially the whole
-        utterance, pass it here. When present, Basket skips the
-        redundant full-buffer re-transcription entirely and uses
-        this transcript directly, which removes a full STT pass
-        (often multiple seconds on CPU) from the critical path
-        on every turn.
-
-    tail_audio_hint:
-        Optional. If the caller only wants to transcribe the
-        *new* audio since the last partial (rather than reusing
-        the partial's text outright), pass just the tail bytes
-        here instead of `final_transcript_hint`. Basket will run
-        STT on this short tail only, instead of the full buffer.
-        Ignored if `final_transcript_hint` is provided.
-    """
-
     pipeline_started_at = time.perf_counter()
 
     yield PipelineEvent(
@@ -1030,13 +1008,10 @@ async def voice_to_voice(
     audio_buffer = bytearray()
 
     async for chunk in audio_stream:
-
         if chunk:
-
             audio_buffer.extend(chunk)
 
     if not audio_buffer and not final_transcript_hint:
-
         raise HTTPException(
             status_code=400,
             detail="No audio was received.",
@@ -1051,23 +1026,15 @@ async def voice_to_voice(
     )
 
     if final_transcript_hint is not None:
-
-        # Reuse the rolling partial-STT result computed while the
-        # user was still speaking. No blocking full-buffer
-        # transcription needed on the critical path.
         transcript = final_transcript_hint.strip()
 
     elif tail_audio_hint is not None:
-
-        # Only transcribe the short tail of audio that the
-        # rolling partial pass hasn't already covered.
         transcript = await speech_to_text(
             audio=tail_audio_hint,
             prompt=config.stt_prompt,
         )
 
     else:
-
         transcript = await speech_to_text(
             audio=bytes(audio_buffer),
             prompt=config.stt_prompt,
@@ -1079,7 +1046,6 @@ async def voice_to_voice(
     )
 
     if not transcript:
-
         yield PipelineEvent(
             type="pipeline.completed",
             data={
@@ -1087,7 +1053,6 @@ async def voice_to_voice(
                 "empty_transcript": True,
             },
         )
-
         return
 
     # --------------------------------------------------------
@@ -1129,20 +1094,15 @@ async def voice_to_voice(
         messages=conversation,
         config=config,
     ):
-
         if event.type == "llm.final":
-
             assistant_text = str(
                 event.data or ""
             ).strip()
-
             if assistant_text:
-
                 append_active_quince_message(
                     role="assistant",
                     content=assistant_text,
                 )
-
                 _chunk_conversation_text(
                     text=assistant_text,
                     role="assistant",

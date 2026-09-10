@@ -592,37 +592,27 @@ async def stt_stream(
         tts_audio_bytes = 0
 
         try:
-
             async for event in voice_to_voice(
-
                 audio_stream=audio_source(),
-
                 config=pipeline_config,
-
                 messages=list(
                     config_request.llm.messages
                 ),
-
                 final_transcript_hint=(
                     last_partial_text
                     if reuse_partial
                     else None
                 ),
-
             ):
 
                 event_count += 1
-
                 if event.type == "tts.audio":
-
                     audio = event.data
-
                     if audio is None:
                         logger.warning(
                             "TTS audio event contained no data."
                         )
                         continue
-
                     try:
                         audio = bytes(audio)
                     except Exception:
@@ -663,23 +653,19 @@ async def stt_stream(
                 )
 
         except asyncio.CancelledError:
-
             logger.warning(
                 "WS PIPELINE CANCELLED after %.3fs",
                 time.perf_counter()
                 - pipeline_started_at,
             )
-
             raise
 
         except Exception:
-
             logger.exception(
                 "WS PIPELINE FAILED after %.3fs",
                 time.perf_counter()
                 - pipeline_started_at,
             )
-
             raise
 
         logger.info(
@@ -701,11 +687,9 @@ async def stt_stream(
     # ========================================================
 
     try:
-
         logger.info(
             "Sending READY event"
         )
-
         await send_json(
             {
                 "type": "ready",
@@ -737,11 +721,9 @@ async def stt_stream(
         # ====================================================
 
         while True:
-
             logger.debug(
                 "WS waiting for next message..."
             )
-
             message = await websocket.receive()
 
             # ------------------------------------------------
@@ -752,12 +734,10 @@ async def stt_stream(
                 message.get("type")
                 == "websocket.disconnect"
             ):
-
                 logger.info(
                     "VOICE WS DISCONNECTED: client=%s",
                     websocket.client,
                 )
-
                 break
 
             # ------------------------------------------------

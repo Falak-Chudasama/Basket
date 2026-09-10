@@ -35,8 +35,8 @@ STT_HEALTH_URL = (
 STREAM_SAMPLE_RATE = 16_000
 STREAM_SAMPLE_WIDTH = 2
 STREAM_WINDOW_SECONDS = 8.0
-STREAM_MIN_AUDIO_SECONDS = 1.5
-STREAM_PARTIAL_INTERVAL_SECONDS = 0.75
+STREAM_MIN_AUDIO_SECONDS = 0.75
+STREAM_PARTIAL_INTERVAL_SECONDS = 1.5
 
 
 # ============================================================
@@ -288,20 +288,14 @@ async def _transcribe_bytes(
         )
     }
 
-    # IMPORTANT: do not send an application/system prompt to llama.cpp
-    # Qwen3-ASR here. llama.cpp maps the multipart `prompt` field directly
-    # into the ASR user's text prompt. With Qwen3-ASR, putting instructions
-    # such as "Transcribe the speech..." there can cause the model to emit
-    # those instructions as if they were spoken words.
-    #
-    # `language=en` is sufficient for our English-only requirement and keeps
-    # the ASR request free of prompt contamination. The `prompt` argument is
-    # retained in the Python API for compatibility, but intentionally ignored.
     data = {
         "model": DEFAULT_STT_MODEL,
         "language": "en",
         "response_format": "json",
     }
+
+    if prompt:
+        data["prompt"] = prompt
 
     try:
         response = await client.post(

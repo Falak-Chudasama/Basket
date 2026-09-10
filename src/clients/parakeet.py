@@ -1,0 +1,1 @@
+# TODO: Use parakeet.cpp for more accurate STT english only model
