@@ -15,7 +15,7 @@ REM
 REM  Services:
 REM
 REM      Basket      → 127.0.0.1:%BASKET_PORT%
-REM      LM Studio   → 127.0.0.1:%LM_STUDIO_PORT%
+REM      LLM         → 127.0.0.1:%LLM_PORT%
 REM      Qwen3-ASR   → 127.0.0.1:%STT_PORT%
 REM      Pocket TTS  → 127.0.0.1:%TTS_PORT%
 REM      SearXNG     → 127.0.0.1:%SEARXNG_PORT%
@@ -73,6 +73,7 @@ if errorlevel 1 (
 
 
 :WAIT_DOCKER
+
 docker info >nul 2>&1
 
 if errorlevel 1 (
@@ -96,10 +97,77 @@ timeout /t 2 /nobreak >nul
 
 
 REM ============================================================
-REM  [3/7] QWEN3-ASR
+REM  [3/7] QUINCE LLM
+REM
+REM  Backend : llama.cpp
+REM  Device  : CUDA / NVIDIA GPU
 REM ============================================================
 
-echo [3/7] Starting Qwen3-ASR...
+echo [3/7] Starting Quince LLM...
+echo.
+echo       Backend  : llama.cpp
+echo       Model    : %LLM_MODEL%
+echo       Alias    : %LLM_MODEL_ID%
+echo       Host     : %HOST%
+echo       Port     : %LLM_PORT%
+echo       Device   : CUDA
+echo       GPU      : %LLM_GPU_LAYERS% layers
+echo       Context  : %LLM_CTX_SIZE%
+echo       Slots    : %LLM_PARALLEL%
+echo       Jinja    : ENABLED
+echo.
+
+
+REM ------------------------------------------------------------
+REM  Verify CUDA llama-server executable
+REM ------------------------------------------------------------
+
+if not exist "%LLAMA_CUDA_EXE%" (
+    echo ERROR: CUDA llama-server.exe was not found:
+    echo        %LLAMA_CUDA_EXE%
+    echo.
+    pause
+    exit /b 1
+)
+
+
+REM ------------------------------------------------------------
+REM  Verify LLM model
+REM ------------------------------------------------------------
+
+if not exist "%LLM_MODEL%" (
+    echo ERROR: LLM model was not found:
+    echo        %LLM_MODEL%
+    echo.
+    pause
+    exit /b 1
+)
+
+
+REM ------------------------------------------------------------
+REM  Start llama.cpp LLM server
+REM
+REM  IMPORTANT:
+REM  Keep this command on ONE LINE because Windows cmd/start
+REM  quoting is sensitive.
+REM ------------------------------------------------------------
+
+start "Basket - LLM" cmd /k ""%LLAMA_CUDA_EXE%" -m "%LLM_MODEL%" --alias "%LLM_MODEL_ID%" --host %HOST% --port %LLM_PORT% --ctx-size %LLM_CTX_SIZE% --parallel %LLM_PARALLEL% --n-gpu-layers %LLM_GPU_LAYERS% --jinja --flash-attn auto"
+
+echo       llama.cpp LLM server launched.
+echo.
+
+timeout /t 2 /nobreak >nul
+
+
+REM ============================================================
+REM  [4/7] QWEN3-ASR
+REM
+REM  Backend : llama.cpp
+REM  Device  : CPU ONLY
+REM ============================================================
+
+echo [4/7] Starting Qwen3-ASR...
 echo.
 echo       Backend : llama.cpp
 echo       Host    : %HOST%
@@ -107,22 +175,62 @@ echo       Port    : %STT_PORT%
 echo       Device  : CPU ONLY
 echo.
 
+
+REM ------------------------------------------------------------
+REM  Verify ASR model
+REM ------------------------------------------------------------
+
+if not exist "%ASR_MODEL%" (
+    echo ERROR: ASR model was not found:
+    echo        %ASR_MODEL%
+    echo.
+    pause
+    exit /b 1
+)
+
+
+REM ------------------------------------------------------------
+REM  Verify ASR mmproj
+REM ------------------------------------------------------------
+
+if not exist "%ASR_MMPROJ%" (
+    echo ERROR: ASR mmproj was not found:
+    echo        %ASR_MMPROJ%
+    echo.
+    pause
+    exit /b 1
+)
+
+
+REM ------------------------------------------------------------
+REM  Verify existing STT llama-server
+REM ------------------------------------------------------------
+
+where llama-server.exe >nul 2>&1
+
+if errorlevel 1 (
+    echo ERROR: llama-server.exe was not found in PATH.
+    echo.
+    echo       Run:
+    echo           where llama-server.exe
+    echo.
+    pause
+    exit /b 1
+)
+
+
+REM ------------------------------------------------------------
+REM  Start Qwen3-ASR
+REM
+REM  CPU ONLY:
+REM      -ngl 0
+REM      --mmproj-device none
+REM ------------------------------------------------------------
+
 start "Basket - STT" cmd /k ""llama-server.exe" -m "%ASR_MODEL%" --mmproj "%ASR_MMPROJ%" --host %HOST% --port %STT_PORT% -ngl 0 --mmproj-device none -c 4096"
 
-timeout /t 2 /nobreak >nul
-
-
-REM ============================================================
-REM  [4/7] LM STUDIO
-REM ============================================================
-
-echo [4/7] Starting LM Studio...
+echo       Qwen3-ASR server launched.
 echo.
-echo       Host : %HOST%
-echo       Port : %LM_STUDIO_PORT%
-echo.
-
-start "Basket - LM Studio" cmd /k "lms server start --port %LM_STUDIO_PORT%"
 
 timeout /t 2 /nobreak >nul
 
@@ -163,9 +271,11 @@ REM ------------------------------------------------------------
 start "Basket - MongoDB" /D "%MONGODB_PATH%" cmd /k "mongod --port %BASKET_DB_PORT% --dbpath ."
 
 echo       Waiting for MongoDB...
+echo.
 
 
 :WAIT_MONGODB
+
 powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName '%HOST%' -Port %BASKET_DB_PORT% -WarningAction SilentlyContinue; if ($t.TcpTestSucceeded) { exit 0 } else { exit 1 }" >nul 2>&1
 
 if errorlevel 1 (
@@ -211,11 +321,17 @@ echo      http://searxng.com
 echo.
 echo  Direct service endpoints:
 echo      Basket      : http://%HOST%:%BASKET_PORT%
-echo      LM Studio   : http://%HOST%:%LM_STUDIO_PORT%
+echo      LLM         : http://%HOST%:%LLM_PORT%
 echo      STT         : http://%HOST%:%STT_PORT%
 echo      TTS         : http://%HOST%:%TTS_PORT%
 echo      SearXNG     : http://%HOST%:%SEARXNG_PORT%
 echo      MongoDB     : mongodb://%HOST%:%BASKET_DB_PORT%
+
+echo.
+echo  LLM API:
+echo      Chat        : http://%HOST%:%LLM_PORT%/v1/chat/completions
+echo      Models      : http://%HOST%:%LLM_PORT%/v1/models
+echo      Health      : http://%HOST%:%LLM_PORT%/health
 
 echo.
 echo ============================================================
