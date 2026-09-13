@@ -16,8 +16,7 @@ from src.clients.llama_stt import (
     STREAM_SAMPLE_WIDTH,
     STREAM_WINDOW_SECONDS,
     _stream_transcribe_window,
-    _timeout,
-    stream_audio_duration_seconds,
+    _timeout
 )
 
 logger = logging.getLogger(__name__)
