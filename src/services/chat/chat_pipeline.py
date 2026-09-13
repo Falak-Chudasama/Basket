@@ -11,8 +11,8 @@ from fastapi.responses import StreamingResponse
 from starlette.datastructures import Headers, UploadFile
 
 from src.clients.llama_stt import _transcribe
-from src.clients.lmstudio import streaming_completion
-from src.clients.pockettts import stream_tts_pcm
+from src.clients.lm_studio import streaming_completion
+from src.clients.pocket_tts import stream_tts_pcm
 from src.schemas.ChatSchema import ChatRequest, Message
 
 logger = logging.getLogger(__name__)

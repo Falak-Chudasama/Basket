@@ -4,9 +4,10 @@ import json
 import logging
 import time
 import httpx
-from typing import Any, Final
+from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
+from src.core.configs import WS_PATH
 from src.schemas.VoiceSchema import VoiceStartRequest
 from src.services.chat.chat_pipeline import PipelineEvent,VoicePipelineConfig,voice_to_voice
 from src.clients.llama_stt import (
@@ -21,13 +22,9 @@ from src.clients.llama_stt import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-WS_PATH: Final[str] = "/ws"
 MAX_STALE_TAIL_SECONDS = 1.5
 
-
 class VoiceSession:
-    """Owns all per-connection state for one voice WebSocket session."""
-
     def __init__(self, websocket: WebSocket) -> None:
         self.ws = websocket
         self.started = False
@@ -98,9 +95,7 @@ class VoiceSession:
 
         try:
             async with httpx.AsyncClient(timeout=_timeout()) as client:
-                result = await _stream_transcribe_window(
-                    client, rolling, prompt=cfg.prompt, sample_rate=STREAM_SAMPLE_RATE
-                )
+                result = await _stream_transcribe_window(client, rolling, prompt=cfg.prompt, sample_rate=STREAM_SAMPLE_RATE)
 
             text = str(result.get("text", "") or "").strip()
             if text and text != self.last_partial_text:
@@ -251,10 +246,7 @@ class VoiceSession:
             return
 
         if self.application is not None and request.application != self.application:
-            logger.error(
-                "START rejected: application mismatch existing=%r requested=%r",
-                self.application, request.application,
-            )
+            logger.error("START rejected: application mismatch existing=%r requested=%r",self.application, request.application)
             await self.send_error("application_mismatch", "Application cannot change during a WebSocket connection.")
             return
 

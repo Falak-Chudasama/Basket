@@ -15,7 +15,7 @@ REM
 REM  Services:
 REM
 REM      Basket      → 127.0.0.1:%BASKET_PORT%
-REM      LM Studio   → 127.0.0.1:%LLM_PORT%
+REM      LM Studio   → 127.0.0.1:%LM_STUDIO_PORT%
 REM      Qwen3-ASR   → 127.0.0.1:%STT_PORT%
 REM      Pocket TTS  → 127.0.0.1:%TTS_PORT%
 REM      SearXNG     → 127.0.0.1:%SEARXNG_PORT%
@@ -119,10 +119,10 @@ REM ============================================================
 echo [4/7] Starting LM Studio...
 echo.
 echo       Host : %HOST%
-echo       Port : %LLM_PORT%
+echo       Port : %LM_STUDIO_PORT%
 echo.
 
-start "Basket - LM Studio" cmd /k "lms server start --port %LLM_PORT%"
+start "Basket - LM Studio" cmd /k "lms server start --port %LM_STUDIO_PORT%"
 
 timeout /t 2 /nobreak >nul
 
@@ -211,7 +211,7 @@ echo      http://searxng.com
 echo.
 echo  Direct service endpoints:
 echo      Basket      : http://%HOST%:%BASKET_PORT%
-echo      LM Studio   : http://%HOST%:%LLM_PORT%
+echo      LM Studio   : http://%HOST%:%LM_STUDIO_PORT%
 echo      STT         : http://%HOST%:%STT_PORT%
 echo      TTS         : http://%HOST%:%TTS_PORT%
 echo      SearXNG     : http://%HOST%:%SEARXNG_PORT%

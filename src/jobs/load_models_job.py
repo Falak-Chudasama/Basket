@@ -1,4 +1,4 @@
-from src.clients.lmstudio import _load_model
+from src.clients.lm_studio import _load_model
 from src.services.models.manager import ModelManager
 
 # TODO: Add logs here.

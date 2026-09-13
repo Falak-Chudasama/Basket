@@ -12,7 +12,8 @@ class ModelManager:
         if cls._embedding_model is None:
             cls._embedding_model = SentenceTransformer(
                 EMBEDDING_MODEL_NAME,
-                device="cpu"
+                device="cpu",
+                trust_remote_code=True,
             )
 
         return cls._embedding_model

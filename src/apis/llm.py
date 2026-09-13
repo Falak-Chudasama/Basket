@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from src.schemas.ChatSchema import ChatRequest
-from src.clients.lmstudio import (
+from src.clients.lm_studio import (
     _chat,
     _get_models,
     _unload_all_models,

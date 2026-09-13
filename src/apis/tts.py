@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from src.schemas.TTSSchema import TTSRequest
-from src.clients.pockettts import (
+from src.clients.pocket_tts import (
     _synthesize
 )
 

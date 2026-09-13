@@ -57,7 +57,7 @@ REM ============================================================
 echo [LLM - LM Studio]
 
 powershell -NoProfile -Command ^
-    "$r=Test-NetConnection '%HOST%' -Port %LLM_PORT% -WarningAction SilentlyContinue; ^
+    "$r=Test-NetConnection '%HOST%' -Port %LM_STUDIO_PORT% -WarningAction SilentlyContinue; ^
     if($r.TcpTestSucceeded){Write-Host 'ONLINE'}else{Write-Host 'OFFLINE'}"
 
 echo.
@@ -115,7 +115,7 @@ echo     %HOST%
 echo.
 echo Ports:
 echo     Basket API : %BASKET_PORT%
-echo     LM Studio  : %LLM_PORT%
+echo     LM Studio  : %LM_STUDIO_PORT%
 echo     STT        : %STT_PORT%
 echo     TTS        : %TTS_PORT%
 echo     SearXNG    : %SEARXNG_PORT%
