@@ -25,7 +25,9 @@ WS_PATH="/ws"
 
 LLM_HOST = os.getenv("LLM_HOST", "127.0.0.1")
 LLM_PORT = int(os.getenv("LLM_PORT", "7001"))
-LLM_DEFAULT_CONTEXT_LENGTH=12000
+LLM_DEFAULT_CONTEXT_LENGTH = 12000
+LLM_DEFAULT_ID = "quince-llm"
+LLM_ROOT_SYSTEM_PROMPT = ""
 
 STT_HOST = os.getenv("STT_HOST", "127.0.0.1")
 STT_PORT = int(os.getenv("STT_PORT", "7002"))

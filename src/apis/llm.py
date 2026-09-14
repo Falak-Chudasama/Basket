@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from src.schemas.ChatSchema import ChatRequest
-from src.clients.lm_studio import (
+from src.clients.llama_llm import (
     _chat,
     _get_models,
     _unload_all_models,
@@ -52,11 +52,7 @@ async def load_model(
         )
 
     return await _load_model(
-        model_id=model_id,
-        context_length=context_length,
-        eval_batch_size=eval_batch_size,
-        flash_attention=flash_attention,
-        num_experts=num_experts,
+        model_id=model_id
     )
 
 
