@@ -61,13 +61,13 @@ class TextChunker:
     def __init__(
         self,
         *,
-        min_chars: int = 100,
-        max_chars: int = 660,
-        soft_boundary_min_chars: int = 420,
-        first_chunk_min_chars: int = 50,
-        first_chunk_max_chars: int = 200,
-        preferred_chars: int = 370,
-        hard_boundary_min_chars: int | None = 70,
+        min_chars: int = 45,
+        max_chars: int = 300,
+        soft_boundary_min_chars: int = 110,
+        first_chunk_min_chars: int = 18,
+        first_chunk_max_chars: int = 90,
+        preferred_chars: int = 150,
+        hard_boundary_min_chars: int | None = 35,
     ):
         self.min_chars = min_chars
         self.max_chars = max_chars
