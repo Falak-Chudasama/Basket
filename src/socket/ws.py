@@ -88,6 +88,7 @@ class VoiceSession:
         cfg = self.require_config()
         started_at = time.perf_counter()
 
+        snapshot_length = len(self.audio_buffer)
         current = bytes(self.audio_buffer)
         rolling = current[-self.window_bytes():]
         if len(rolling) < self.min_audio_bytes():
@@ -102,7 +103,7 @@ class VoiceSession:
                 self.last_partial_text = text
                 await self.send_json({"type": "stt.partial", "text": text})
 
-            self.last_partial_audio_bytes = len(self.audio_buffer)
+            self.last_partial_audio_bytes = snapshot_length
             logger.info("PARTIAL STT complete in %.3fs: %r", time.perf_counter() - started_at, text)
 
         except asyncio.CancelledError:
@@ -150,16 +151,14 @@ class VoiceSession:
     # Full pipeline (STT reuse decision -> LLM -> TTS)
     # ------------------------------------------------------------------
 
-    def _should_reuse_partial(self) -> bool:
-        tail = len(self.audio_buffer) - self.last_partial_audio_bytes
-        return bool(self.last_partial_text and 0 <= tail <= self.stale_tail_bytes())
-
     async def run_pipeline(self) -> None:
         cfg = self.require_config()
         started_at = time.perf_counter()
-        reuse_partial = self._should_reuse_partial()
-
-        logger.info("WS PIPELINE: application=%r audio_bytes=%d reuse_partial=%s",self.application, len(self.audio_buffer), reuse_partial)
+        logger.info(
+            "WS PIPELINE: application=%r audio_bytes=%d final_stt=full_buffer",
+            self.application,
+            len(self.audio_buffer),
+        )
 
         async def audio_source():
             if self.audio_buffer:
@@ -188,7 +187,7 @@ class VoiceSession:
                 audio_stream=audio_source(),
                 config=pipeline_config,
                 messages=list(cfg.llm.messages),
-                final_transcript_hint=self.last_partial_text if reuse_partial else None,
+                final_transcript_hint=None,
             ):
                 event_count += 1
 

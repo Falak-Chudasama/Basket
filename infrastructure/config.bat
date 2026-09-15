@@ -78,11 +78,21 @@ set "LLM_PARALLEL=1"
 
 REM ============================================================
 REM  QWEN3-ASR
+REM  
+REM  SMALLER MODEL
+REM  set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\Qwen3-ASR-0.6B-Q8_0.gguf"
+REM  set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
+REM  
+REM  BIGGER MODEL
+REM  set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\Qwen3-ASR-1.7B-Q8_0.gguf"
+REM  set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
 REM ============================================================
 
-set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\Qwen3-ASR-0.6B-Q8_0.gguf"
+set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\Qwen3-ASR-1.7B-Q8_0.gguf"
+set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
 
-set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
+@REM  set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\Qwen3-ASR-0.6B-Q8_0.gguf"
+@REM  set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
 
 
 REM ============================================================

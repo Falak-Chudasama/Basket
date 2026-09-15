@@ -1,23 +1,18 @@
+from __future__ import annotations
+
 import io
 import re
 import wave
+
 import httpx
 from fastapi import HTTPException, UploadFile
 
 from src.core.configs import DEFAULT_STT_MODEL, STT_HOST, STT_PORT
 
-# ============================================================
-# LLAMA.CPP STT CONFIGURATION
-# ============================================================
 
 STT_BASE_URL = f"http://{STT_HOST}:{STT_PORT}"
 STT_TRANSCRIBE_URL = f"{STT_BASE_URL}/v1/audio/transcriptions"
 STT_HEALTH_URL = f"{STT_BASE_URL}/health"
-
-
-# ============================================================
-# STREAMING CONFIGURATION
-# ============================================================
 
 STREAM_SAMPLE_RATE = 16_000
 STREAM_SAMPLE_WIDTH = 2
@@ -26,20 +21,18 @@ STREAM_MIN_AUDIO_SECONDS = 1.5
 STREAM_PARTIAL_INTERVAL_SECONDS = 0.75
 
 
-# ============================================================
-# HTTP CONFIGURATION
-# ============================================================
-
 def _timeout():
     return httpx.Timeout(connect=10.0, read=120.0, write=120.0, pool=30.0)
 
-# ============================================================
-# UTIL
-# ============================================================
 
 def _pcm16_to_wav(pcm_bytes: bytes, sample_rate: int = STREAM_SAMPLE_RATE) -> bytes:
     if not pcm_bytes:
         raise ValueError("PCM audio cannot be empty.")
+
+    if len(pcm_bytes) % STREAM_SAMPLE_WIDTH != 0:
+        # Never silently lose a sample. A malformed trailing byte is better
+        # treated as an explicit error than as an accidental time shift.
+        raise ValueError("PCM16 audio has an odd byte length.")
 
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
@@ -56,23 +49,29 @@ def _clean_transcription(text: str) -> str:
     if not text:
         return ""
 
+    # Qwen/llama.cpp integrations can expose the transcript after an
+    # <asr_text> marker. Keep everything after that marker.
     marker_match = re.search(r"<asr_text>", text, flags=re.IGNORECASE)
     if marker_match:
         text = text[marker_match.end():].strip()
 
-    text = re.sub(r"^language\s+[A-Za-z][A-Za-z ._-]*\s*", "", text, flags=re.IGNORECASE).strip()
+    # Remove an optional language prefix only when it appears at the start.
+    text = re.sub(
+        r"^language\s+(?:english|en)\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
 
     return text
 
 
 def _extract_text(payload) -> str:
-    """Extract transcript text from llama.cpp's JSON response."""
     if isinstance(payload, dict):
         value = payload.get("text")
         if isinstance(value, str):
             return _clean_transcription(value)
 
-        # Be tolerant of compatible OpenAI-style payloads.
         choices = payload.get("choices")
         if isinstance(choices, list) and choices:
             first = choices[0]
@@ -80,6 +79,12 @@ def _extract_text(payload) -> str:
                 text = first.get("text")
                 if isinstance(text, str):
                     return _clean_transcription(text)
+
+                message = first.get("message")
+                if isinstance(message, dict):
+                    content = message.get("content")
+                    if isinstance(content, str):
+                        return _clean_transcription(content)
 
     if isinstance(payload, str):
         return _clean_transcription(payload)
@@ -93,74 +98,48 @@ async def _health():
             response = await client.get(STT_HEALTH_URL)
         response.raise_for_status()
         return response.json()
-
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=502, detail=f"STT health check failed: {exc.response.status_code}")
-
+        raise HTTPException(
+            status_code=502,
+            detail=f"STT health check failed: {exc.response.status_code}",
+        ) from exc
     except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail=f"Could not connect to STT service: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not connect to STT service: {exc}",
+        ) from exc
 
-
-# ============================================================
-# MODEL
-# ============================================================
 
 async def _load_model():
-    try:
-        async with httpx.AsyncClient(timeout=_timeout()) as client:
-            response = await client.get(STT_HEALTH_URL)
-        response.raise_for_status()
-
-        return {
-            "status": "ready",
-            "backend": "llama.cpp",
-            "model": DEFAULT_STT_MODEL,
-            "host": STT_HOST,
-            "port": STT_PORT,
-        }
-
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=502, detail=f"STT service is not healthy: {exc.response.status_code}")
-
-    except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail=f"STT service is not running: {exc}")
+    health = await _health()
+    return {
+        "status": "ready",
+        "backend": "llama.cpp",
+        "model": DEFAULT_STT_MODEL,
+        "host": STT_HOST,
+        "port": STT_PORT,
+        "health": health,
+    }
 
 
 async def _model_status():
     try:
-        async with httpx.AsyncClient(timeout=_timeout()) as client:
-            response = await client.get(STT_HEALTH_URL)
-        response.raise_for_status()
-
+        await _health()
         return {
             "available": True,
             "status": "ready",
             "backend": "llama.cpp",
             "model": DEFAULT_STT_MODEL,
         }
-
-    except httpx.HTTPStatusError as exc:
-        return {
-            "available": False,
-            "status": "unhealthy",
-            "backend": "llama.cpp",
-            "model": DEFAULT_STT_MODEL,
-            "error": f"HTTP {exc.response.status_code}",
-        }
-
-    except httpx.RequestError as exc:
+    except HTTPException as exc:
         return {
             "available": False,
             "status": "offline",
             "backend": "llama.cpp",
             "model": DEFAULT_STT_MODEL,
-            "error": str(exc),
+            "error": exc.detail,
         }
 
-
-# ============================================================
-# TRANSCRIPTION HELPERS
-# ============================================================
 
 async def _transcribe_bytes(
     client: httpx.AsyncClient,
@@ -175,27 +154,33 @@ async def _transcribe_bytes(
 
     files = {"file": (filename, audio_bytes, content_type)}
 
-    default_prompt = "Transcribe the speech in English only. Do not output Chinese, Japanese, Korean, Arabic, Hindi, Cyrillic, or any other non-English language."
-
+    # Qwen3-ASR's documented preprocessing targets mono 16 kHz. Do not
+    # add application-side EQ, AGC, denoising, or resampling here.
     data = {
         "model": DEFAULT_STT_MODEL,
         "language": "en",
         "response_format": "json",
-        "prompt": default_prompt,
+        "prompt": (
+            prompt
+            or "Transcribe the spoken audio accurately in English. "
+               "Return only the words that were spoken. "
+               "Do not translate, summarize, or invent words."
+        ),
     }
 
-    if prompt:
-        data["prompt"] = f"Transcribe the speech in English only. Do not output any non-English language. {prompt}"
-
     try:
-        response = await client.post(STT_TRANSCRIBE_URL, files=files, data=data)
+        response = await client.post(
+            STT_TRANSCRIBE_URL,
+            files=files,
+            data=data,
+        )
         response.raise_for_status()
 
         payload = response.json()
         text = _extract_text(payload)
 
-        # Preserve the backend response shape while ensuring the returned
-        # transcript is clean for Basket consumers.
+        # Keep the raw backend fields available for debugging while exposing
+        # a normalized `text` field to Basket.
         if isinstance(payload, dict):
             result = dict(payload)
             result["text"] = text
@@ -207,15 +192,13 @@ async def _transcribe_bytes(
         raise HTTPException(
             status_code=502,
             detail=f"STT backend returned {exc.response.status_code}: {exc.response.text}",
-        )
-
+        ) from exc
     except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail=f"Could not connect to STT backend: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not connect to STT backend: {exc}",
+        ) from exc
 
-
-# ============================================================
-# TRANSCRIPTION
-# ============================================================
 
 async def _transcribe(file: UploadFile, prompt: str | None = None):
     audio_bytes = await file.read()
@@ -228,26 +211,25 @@ async def _transcribe(file: UploadFile, prompt: str | None = None):
                 client,
                 audio_bytes,
                 filename=file.filename or "audio.wav",
-                content_type=file.content_type or "application/octet-stream",
+                content_type=file.content_type or "audio/wav",
                 prompt=prompt,
             )
-
     except HTTPException:
         raise
 
 
-# ============================================================
-# STREAMING AUDIO HELPERS
-# ============================================================
-
-def stream_audio_duration_seconds(audio_bytes: bytes, sample_rate: int = STREAM_SAMPLE_RATE) -> float:
+def stream_audio_duration_seconds(
+    audio_bytes: bytes,
+    sample_rate: int = STREAM_SAMPLE_RATE,
+) -> float:
     bytes_per_second = sample_rate * STREAM_SAMPLE_WIDTH
-    if bytes_per_second <= 0:
-        return 0.0
-    return len(audio_bytes) / bytes_per_second
+    return len(audio_bytes) / bytes_per_second if bytes_per_second else 0.0
 
 
-def make_stream_wav(pcm_bytes: bytes, sample_rate: int = STREAM_SAMPLE_RATE) -> bytes:
+def make_stream_wav(
+    pcm_bytes: bytes,
+    sample_rate: int = STREAM_SAMPLE_RATE,
+) -> bytes:
     return _pcm16_to_wav(pcm_bytes, sample_rate=sample_rate)
 
 
@@ -259,4 +241,10 @@ async def _stream_transcribe_window(
     sample_rate: int = STREAM_SAMPLE_RATE,
 ) -> dict:
     wav_bytes = _pcm16_to_wav(pcm_bytes, sample_rate=sample_rate)
-    return await _transcribe_bytes(client, wav_bytes, filename="stream.wav", content_type="audio/wav", prompt=prompt)
+    return await _transcribe_bytes(
+        client,
+        wav_bytes,
+        filename="stream.wav",
+        content_type="audio/wav",
+        prompt=prompt,
+    )

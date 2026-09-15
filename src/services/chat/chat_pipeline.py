@@ -46,21 +46,41 @@ class PipelineEvent:
     data: object | None = None
 
 class TextChunker:
-    HARD_BOUNDARIES = (".", "?", "!")
+    """
+    Adaptive text chunker for low-latency TTS.
+
+    Prefers long, natural phrases and only breaks when:
+    - a hard sentence boundary is reached,
+    - a soft boundary has accumulated enough text, or
+    - the buffer becomes genuinely large and needs a safe whitespace split.
+    """
+
+    HARD_BOUNDARIES = (".", "?", "!", "\n")
     SOFT_BOUNDARIES = (",", ";", ":")
 
     def __init__(
         self,
         *,
-        min_chars: int = 12,
-        max_chars: int = 180,
-        soft_boundary_min_chars: int = 55,
-        first_chunk_min_chars: int = 6,
+        min_chars: int = 100,
+        max_chars: int = 660,
+        soft_boundary_min_chars: int = 420,
+        first_chunk_min_chars: int = 50,
+        first_chunk_max_chars: int = 200,
+        preferred_chars: int = 370,
+        hard_boundary_min_chars: int | None = 70,
     ):
         self.min_chars = min_chars
         self.max_chars = max_chars
         self.soft_boundary_min_chars = soft_boundary_min_chars
         self.first_chunk_min_chars = first_chunk_min_chars
+        self.first_chunk_max_chars = first_chunk_max_chars
+        self.preferred_chars = preferred_chars
+
+        self._hard_boundary_min_chars = (
+            hard_boundary_min_chars
+            if hard_boundary_min_chars is not None
+            else min_chars
+        )
 
         self._buffer = ""
         self._emitted_first_chunk = False
@@ -72,65 +92,178 @@ class TextChunker:
         self._buffer += token
         chunks: list[str] = []
 
-        while True:
-            boundary = self._find_boundary()
-            if boundary is None:
+        while self._buffer:
+            chunk = self._extract_chunk()
+            if chunk is None:
                 break
 
-            end_index, _ = boundary
-            candidate = self._buffer[: end_index + 1].strip()
-            if not candidate:
-                break
-
-            chunks.append(candidate)
+            chunks.append(chunk)
             self._emitted_first_chunk = True
-            self._buffer = self._buffer[end_index + 1 :]
-
-        if len(self._buffer) >= self.max_chars:
-            split_at = self._find_soft_split()
-            if split_at is not None:
-                candidate = self._buffer[:split_at].strip()
-                if candidate:
-                    chunks.append(candidate)
-                    self._buffer = self._buffer[split_at:]
 
         return chunks
 
     def flush(self) -> str | None:
-        value = self._buffer.strip()
+        value = self._clean(self._buffer)
         self._buffer = ""
-        return value or None
 
-    def _find_boundary(self) -> tuple[int, str] | None:
-        active_min_chars = self.first_chunk_min_chars if not self._emitted_first_chunk else self.min_chars
+        if not value:
+            return None
 
-        candidates = [
-            (index, ch)
-            for ch in self.HARD_BOUNDARIES
-            if (index := self._buffer.find(ch)) >= active_min_chars
-        ]
-        if candidates:
-            return min(candidates, key=lambda item: item[0])
+        self._emitted_first_chunk = True
+        return value
 
-        # The first chunk may also fire on a soft boundary (comma, semicolon,
-        # colon) using the same relaxed threshold, so a phrase like "Sure, I
-        # can help" reaches TTS immediately instead of waiting for a full
-        # sentence.
-        active_soft_min_chars = self.first_chunk_min_chars if not self._emitted_first_chunk else self.soft_boundary_min_chars
+    def _extract_chunk(self) -> str | None:
+        buffer = self._buffer
 
-        candidates = [
-            (index, ch)
-            for ch in self.SOFT_BOUNDARIES
-            if (index := self._buffer.find(ch)) >= active_soft_min_chars
-        ]
-        return min(candidates, key=lambda item: item[0]) if candidates else None
+        if not buffer.strip():
+            self._buffer = ""
+            return None
 
-    def _find_soft_split(self) -> int | None:
-        upper_bound = min(len(self._buffer), self.max_chars)
-        for index in range(upper_bound, self.min_chars, -1):
-            if self._buffer[index - 1].isspace():
+        is_first = not self._emitted_first_chunk
+
+        # 1. Prefer a complete sentence / line.
+        hard = self._find_hard_boundary()
+        if hard is not None:
+            end = hard + 1
+            candidate = self._clean(buffer[:end])
+
+            if self._acceptable(candidate, is_first):
+                self._buffer = buffer[end:]
+                return candidate
+
+        # 2. First chunk: permit an earlier release, but keep it substantial.
+        if is_first:
+            soft = self._find_soft_boundary(minimum=self.first_chunk_min_chars)
+            if soft is not None:
+                end = soft + 1
+                candidate = self._clean(buffer[:end])
+                if len(candidate) >= self.first_chunk_min_chars:
+                    self._buffer = buffer[end:]
+                    return candidate
+
+            if len(buffer.strip()) >= self.first_chunk_max_chars:
+                split = self._find_best_whitespace(target=self.first_chunk_max_chars)
+                if split is not None:
+                    candidate = self._clean(buffer[:split])
+                    if len(candidate) >= self.first_chunk_min_chars:
+                        self._buffer = buffer[split:]
+                        return candidate
+
+        # 3. Soft punctuation only after a substantial phrase.
+        soft = self._find_soft_boundary(minimum=self.soft_boundary_min_chars)
+        if soft is not None:
+            end = soft + 1
+            candidate = self._clean(buffer[:end])
+            if len(candidate) >= self.soft_boundary_min_chars:
+                self._buffer = buffer[end:]
+                return candidate
+
+        # 4. Safety split for very large punctuation-free output.
+        if len(buffer.strip()) >= self.max_chars:
+            split = self._find_best_whitespace(target=self.preferred_chars)
+            if split is None:
+                split = self._find_best_whitespace(target=self.max_chars)
+
+            if split is not None:
+                candidate = self._clean(buffer[:split])
+                if len(candidate) >= self.min_chars:
+                    self._buffer = buffer[split:]
+                    return candidate
+
+            # Absolute fallback: never let an unbroken token stream grow forever.
+            if len(buffer) >= self.max_chars:
+                candidate = self._clean(buffer[:self.max_chars])
+                if candidate:
+                    self._buffer = buffer[self.max_chars:]
+                    return candidate
+
+        return None
+
+    def _find_hard_boundary(self) -> int | None:
+        minimum = (
+            self.first_chunk_min_chars
+            if not self._emitted_first_chunk
+            else self._hard_boundary_min_chars
+        )
+
+        for index, char in enumerate(self._buffer):
+            if index < minimum or char not in self.HARD_BOUNDARIES:
+                continue
+
+            if char == "\n":
+                return index
+
+            if char == "." and self._looks_like_non_terminal_period(index):
+                continue
+
+            return index
+
+        return None
+
+    def _find_soft_boundary(self, *, minimum: int) -> int | None:
+        for index in range(minimum, len(self._buffer)):
+            if self._buffer[index] in self.SOFT_BOUNDARIES:
                 return index
         return None
+
+    def _find_best_whitespace(self, *, target: int) -> int | None:
+        buffer = self._buffer
+        if not buffer:
+            return None
+
+        before_candidates = [
+            i
+            for i in range(self.min_chars, min(target + 1, len(buffer)))
+            if buffer[i - 1].isspace()
+        ]
+        if before_candidates:
+            return max(before_candidates)
+
+        upper = min(len(buffer), target + 35)
+        after_candidates = [
+            i
+            for i in range(target + 1, upper + 1)
+            if buffer[i - 1].isspace()
+        ]
+        if after_candidates:
+            return min(after_candidates)
+
+        return None
+
+    def _looks_like_non_terminal_period(self, index: int) -> bool:
+        buffer = self._buffer
+
+        if (
+            index > 0
+            and index + 1 < len(buffer)
+            and buffer[index - 1].isdigit()
+            and buffer[index + 1].isdigit()
+        ):
+            return True
+
+        if (
+            index > 0
+            and index + 1 < len(buffer)
+            and buffer[index - 1].isalnum()
+            and buffer[index + 1].isalnum()
+        ):
+            return True
+
+        if index >= 2 and buffer[index - 2].isalpha() and buffer[index - 1] == ".":
+            return True
+
+        return False
+
+    def _acceptable(self, text: str, is_first: bool) -> bool:
+        if not text:
+            return False
+
+        minimum = self.first_chunk_min_chars if is_first else self.min_chars
+        return len(text) >= minimum
+
+    @staticmethod
+    def _clean(text: str) -> str:
+        return text.strip()
 
 
 # ============================================================
