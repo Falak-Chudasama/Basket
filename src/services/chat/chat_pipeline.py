@@ -12,9 +12,12 @@ from starlette.datastructures import Headers, UploadFile
 
 from src.clients.llama_stt import _transcribe
 from src.clients.lm_studio import streaming_completion
+from src.clients.llama_llm import _chat_completion_streaming
 from src.clients.pocket_tts import stream_tts_pcm
 from src.schemas.ChatSchema import ChatRequest, Message
 from src.services.session.session import append_chat_to_memory
+from src.services.retrieval.chat_retriever import retrieve, _get_commands
+from src.core.state import quince_chats
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +51,6 @@ class PipelineEvent:
     data: object | None = None
 
 class TextChunker:
-    """
-    Adaptive text chunker for low-latency TTS.
-
-    Prefers long, natural phrases and only breaks when:
-    - a hard sentence boundary is reached,
-    - a soft boundary has accumulated enough text, or
-    - the buffer becomes genuinely large and needs a safe whitespace split.
-    """
-
     HARD_BOUNDARIES = (".", "?", "!", "\n")
     SOFT_BOUNDARIES = (",", ";", ":")
 
@@ -64,12 +58,12 @@ class TextChunker:
         self,
         *,
         min_chars: int = 45,
-        max_chars: int = 300,
-        soft_boundary_min_chars: int = 110,
-        first_chunk_min_chars: int = 18,
-        first_chunk_max_chars: int = 90,
-        preferred_chars: int = 150,
-        hard_boundary_min_chars: int | None = 35,
+        max_chars: int = 320,
+        soft_boundary_min_chars: int = 190,
+        first_chunk_min_chars: int = 24,
+        first_chunk_max_chars: int = 110,
+        preferred_chars: int = 200,
+        hard_boundary_min_chars: int | None = 50,
     ):
         self.min_chars = min_chars
         self.max_chars = max_chars
@@ -341,7 +335,7 @@ async def stream_llm(*, messages: list[Message], config: VoicePipelineConfig) ->
     )
 
     try:
-        response = await streaming_completion(request)
+        response = await _chat_completion_streaming(request)
     except Exception:
         logger.exception("LLM REQUEST FAILED after %.3fs", time.perf_counter() - started_at)
         raise
@@ -506,7 +500,7 @@ async def text_to_voice(
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
-    # TODO: RAG
+    # TODO: RAG implementation here as well
 
     conversation = list(messages or [])
     conversation.append(Message(role="user", content=text))
@@ -531,23 +525,6 @@ async def voice_to_voice(
     final_transcript_hint: str | None = None,
     tail_audio_hint: bytes | None = None,
 ) -> AsyncIterator[PipelineEvent]:
-    """
-    final_transcript_hint:
-        If the caller (the WS layer) already has a fresh rolling
-        partial-STT transcript covering essentially the whole utterance,
-        pass it here. When present, Basket skips the redundant full-buffer
-        re-transcription entirely and uses this transcript directly, which
-        removes a full STT pass (often multiple seconds on CPU) from the
-        critical path on every turn.
-
-    tail_audio_hint:
-        Optional. If the caller only wants to transcribe the *new* audio
-        since the last partial (rather than reusing the partial's text
-        outright), pass just the tail bytes here instead of
-        `final_transcript_hint`. Basket will run STT on this short tail
-        only, instead of the full buffer. Ignored if `final_transcript_hint`
-        is provided.
-    """
     pipeline_started_at = time.perf_counter()
     yield PipelineEvent(type="pipeline.started", data={"mode": "voice_to_voice"})
 
@@ -586,12 +563,99 @@ async def voice_to_voice(
     # BUILD CONVERSATION
     # --------------------------------------------------------
 
-    # TODO: Retrieve context here.
+    base_messages = list(messages or [])
 
-    conversation = list(messages or [])
-    conversation.append(Message(role="user", content=transcript))
+    existing_system_messages: list[str] = []
+    conversation_history: list[Message] = []
 
-    append_chat_to_memory(application=config.application, content=transcript, source="user")
+    for message in base_messages:
+        if message.role == "system":
+            existing_system_messages.append(str(message.content))
+        else:
+            conversation_history.append(message)
+
+    candidates = await retrieve(
+        query=transcript,
+        application=config.application,
+    )
+
+    user_prompts = []
+    assistant_responses = []
+    commands = list(
+        _get_commands(application=config.application).get_all()
+    )
+
+    for candidate in candidates:
+        if candidate["metadata"]["source"] == "user":
+            user_prompts.append(candidate)
+        elif candidate["metadata"]["source"] == "assistant":
+            assistant_responses.append(candidate)
+
+    system_parts: list[str] = []
+
+    system_parts.extend(existing_system_messages)
+
+    if len(user_prompts) > 0:
+        system_parts.append(
+            "Relevant Previous User Prompts:\n"
+            + "\n".join(
+                user_prompt["document"]
+                for user_prompt in user_prompts
+            )
+        )
+
+    if len(assistant_responses) > 0:
+        system_parts.append(
+            "Relevant Previous Your Responses:\n"
+            + "\n".join(
+                assistant_response["document"]
+                for assistant_response in assistant_responses
+            )
+        )
+
+    if len(commands) > 0:
+        system_parts.append(
+            "Follow These Commands:\n"
+            + "\n".join(
+                command["command"]
+                for command in commands
+            )
+        )
+
+    if config.application == "quince":
+        previous_response = (
+            quince_chats.get_immediate_previous_response()
+        )
+
+        system_parts.append(
+            "Your Exact Previous Response:\n"
+            + previous_response
+        )
+    
+    conversation: list[Message] = []
+
+    if system_parts:
+        conversation.append(
+            Message(
+                role="system",
+                content="\n\n".join(system_parts),
+            )
+        )
+
+    conversation.extend(conversation_history)
+
+    conversation.append(
+        Message(
+            role="user",
+            content=transcript,
+        )
+    )
+
+    append_chat_to_memory(
+        application=config.application,
+        content=transcript,
+        source="user",
+    )
 
     # --------------------------------------------------------
     # LLM -> TTS

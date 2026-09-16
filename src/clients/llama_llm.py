@@ -50,38 +50,47 @@ async def _ensure_model_loaded(model_id: str = LLM_DEFAULT_ID) -> bool:
     return True
 
 def _build_message(request: ChatRequest):
-    messages = []
+    system_parts: list[str] = []
+    conversation_messages: list[dict] = []
 
     if LLM_ROOT_SYSTEM_PROMPT:
-        messages.append({
-            "role": "system",
-            "content": LLM_ROOT_SYSTEM_PROMPT
-        })
+        system_parts.append(LLM_ROOT_SYSTEM_PROMPT)
 
     if request.system_prompt:
-        messages.append({
-            "role": "system",
-            "content": request.system_prompt
-        })
+        system_parts.append(request.system_prompt)
 
     for message in request.messages:
-        messages.append({
-            "role": message.role,
-            "content": message.content
+        print(f"LLM MESSAGE: {message.role}/{message.content}") # DELIT LOG
+
+        if message.role == "system":
+            system_parts.append(str(message.content))
+        else:
+            conversation_messages.append({
+                "role": message.role,
+                "content": message.content,
+            })
+
+    print("\n\n\n")
+    final_messages: list[dict] = []
+
+    if system_parts:
+        final_messages.append({
+            "role": "system",
+            "content": "\n\n".join(system_parts),
         })
 
-    return messages
+    final_messages.extend(conversation_messages)
+
+    return final_messages
 
 def _build_request(request: ChatRequest, stream: bool):
     payload = {
         "model": request.model or LLM_DEFAULT_ID,
         "messages": _build_message(request),
         "stream": stream,
-        "extra_body": {
-            "chat_template_kwargs": {
-                "enable_thinking": False
-            } # TODO: Enable thinking too
-        }
+        "chat_template_kwargs": {
+            "enable_thinking": False
+        },
     }
 
     if request.temperature is not None:

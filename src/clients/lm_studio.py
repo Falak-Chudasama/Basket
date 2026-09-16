@@ -105,10 +105,6 @@ def _build_messages(request: ChatRequest):
     messages = [{"role": "system", "content": system_prompt}]
 
     for message in request.messages:
-        # Basket owns the system prompt. System messages supplied inside
-        # messages are ignored.
-        if message.role == "system":
-            continue
         messages.append({"role": message.role, "content": message.content})
 
     return messages

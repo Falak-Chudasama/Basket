@@ -1,13 +1,11 @@
 from __future__ import annotations
-
-import asyncio
 from typing import Any
+import asyncio
 
 from src.core.configs import (
     DEFAULT_VECTORDB_N,
     TOP_K,
     DEFAULT_BM25_N,
-    DEFAULT_CANDIDATES_FOR_RERANKING,
 )
 from src.core.state import (
     quince_bm25_memory,
@@ -54,14 +52,23 @@ def command_retrieval(application: str):
     return commands.get_all()
 
 
-def deduplicate_candidates(application: str, query: str):
-    unique_candidates = []
+async def deduplicate_candidates(application: str, query: str) -> list[dict[str, Any]]:
+    unique_candidates: list[dict[str, Any]] = []
 
-    semantic_candidates = semantic_retrieval(query=query, application=application)
+    semantic_candidates = await semantic_retrieval(query=query, application=application)
     bm25_candidates = bm25_retrieval(query=query, application=application)
 
-    # bm25_indices = bm25_candidates
-    # TODO: Finish this.
+    for bm25_candidate in bm25_candidates:
+        flag = True
+        for semantic_candidate in semantic_candidates:
+            if semantic_candidate['id'] == bm25_candidate['id']:
+                flag = False
+                break
+        if flag:
+            unique_candidates.append(bm25_candidate)
+
+    for semantic_candidate in semantic_candidates:
+        unique_candidates.append(semantic_candidate)      
 
     return unique_candidates
 
@@ -71,12 +78,43 @@ async def rerank(
     candidates: list[dict[str, Any]],
     top_k: int = TOP_K,
 ):
+    if not candidates:
+        return []
 
-    pass
+    reranker = ModelManager.get_reranker_model()
+
+    pairs = [
+        (
+            query,
+            candidate["document"]
+        ) for candidate in candidates
+    ]
+
+    scores = await asyncio.to_thread(
+        reranker.predict,
+        pairs
+    )
+
+    reranked_candidates = []
+
+    for candidate, score in zip(candidates,scores):
+        reranked_candidates.append({
+            **candidate,
+            "rerank_score": float(score),
+        })
+
+    reranked_candidates.sort(
+        key=lambda item: item["rerank_score"],
+        reverse=True,
+    )
+
+    return reranked_candidates[:top_k]
 
 
 async def retrieve(
     query: str,
     application: str = "quince",
 ):
-    pass
+    unique_candidates = await deduplicate_candidates(application=application, query=query)
+    reranked_candidates = await rerank(query=query, candidates=unique_candidates)
+    return reranked_candidates

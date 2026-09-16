@@ -44,16 +44,32 @@ class Memory:
         query: str,
         n_result: int = DEFAULT_VECTORDB_N
     ):
-
         query_embedding = create_embedding(query)
 
-        return self.collection.query(
+        result = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=n_result,
             where={
                 "application": self.application
             }
         )
+
+        ids = result["ids"][0]
+        documents = result["documents"][0]
+        metadatas = result["metadatas"][0]
+        distances = result["distances"][0]
+
+        normalized_result = []
+
+        for i in range(len(ids)):
+            normalized_result.append({
+                "id": ids[i],
+                "document": documents[i],
+                "metadata": metadatas[i],
+                "distance": float(distances[i]),
+            })
+
+        return normalized_result
 
     def clear_short_term(self) -> None:
 

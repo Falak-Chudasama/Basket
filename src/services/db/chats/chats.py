@@ -91,6 +91,21 @@ class Chat:
             ]
         )
 
+    def get_immediate_previous_response(self):
+        chat_obj = self.get_current_chat()
+
+        if chat_obj is None or len(chat_obj["chats"]) < 2:
+            return "<NO_PREVIOUS_RESPONSE>"
+
+        chats = chat_obj["chats"]
+        length = len(chats)
+        
+        if chats[length - 1]["role"] == "assistant":
+            return chats[length - 1]["content"]
+        else:
+            return chats[length - 2]["content"]
+
+
     def get_all(self):
         return self.collection.find(
             {
