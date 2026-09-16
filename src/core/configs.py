@@ -6,7 +6,7 @@ load_dotenv()
 MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:7005/")
 BASKET_DB: str = os.getenv("BASKET_DB", "basket")
 
-VECTOR_DB_PATH: str = "../../chromadb"
+VECTOR_DB_PATH: str = "./chromadb"
 
 
 # Primary -> jinaai/jina-embeddings-v5-text-nano

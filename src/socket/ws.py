@@ -166,6 +166,7 @@ class VoiceSession:
                 yield bytes(self.audio_buffer)
 
         pipeline_config = VoicePipelineConfig(
+            application=self.application,
             stt_prompt=cfg.prompt,
             system_prompt=cfg.llm.system_prompt,
             model=cfg.llm.model,

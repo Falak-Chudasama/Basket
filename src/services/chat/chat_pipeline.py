@@ -14,6 +14,7 @@ from src.clients.llama_stt import _transcribe
 from src.clients.lm_studio import streaming_completion
 from src.clients.pocket_tts import stream_tts_pcm
 from src.schemas.ChatSchema import ChatRequest, Message
+from src.services.session.session import append_chat_to_memory
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ REALTIME_TTS_SAMPLE_WIDTH = 2
 
 @dataclass(slots=True)
 class VoicePipelineConfig:
+    application: str = "quince"
     # STT
     stt_prompt: str | None = None
     # LLM
@@ -584,17 +586,24 @@ async def voice_to_voice(
     # BUILD CONVERSATION
     # --------------------------------------------------------
 
-    # TODO: RAG
+    # TODO: Retrieve context here.
 
     conversation = list(messages or [])
     conversation.append(Message(role="user", content=transcript))
+
+    append_chat_to_memory(application=config.application, content=transcript, source="user")
 
     # --------------------------------------------------------
     # LLM -> TTS
     # --------------------------------------------------------
 
+    final_response = ""
     async for event in llm_to_speech(messages=conversation, config=config):
+        if (event.type == "llm.final"):
+            final_response = str(event.data)
         yield event
+
+    append_chat_to_memory(application=config.application, content=final_response, source="assistant")
 
     # --------------------------------------------------------
     # COMPLETE

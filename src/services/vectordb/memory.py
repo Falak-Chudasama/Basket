@@ -17,10 +17,12 @@ class Memory:
         source: str = "user",
         embedding: list[float] | None = None,
         memory_type: str = "short_term",
+        session_id: str
     ) -> None:
 
         metadata = {
             "application": self.application,
+            "session_id": session_id,
             "memory_type": memory_type,
             "source": source,
             "created_at": get_datetime()

@@ -66,9 +66,7 @@ class BM25:
     ) -> None:
 
         try:
-            index = self.ids.index(
-                document_id
-            )
+            index = self.ids.index(document_id)
 
             self.documents[index] = document
             self.metadatas[index] = metadata
@@ -92,9 +90,7 @@ class BM25:
 
         query_tokens = self._tokenize(query)
 
-        scores = self.index.get_scores(
-            query_tokens
-        )
+        scores = self.index.get_scores(query_tokens)
 
         ranked_indices = sorted(
             range(len(scores)),
@@ -119,9 +115,7 @@ class BM25:
     ) -> None:
 
         try:
-            index = self.ids.index(
-                document_id
-            )
+            index = self.ids.index(document_id)
         except ValueError:
             return
 

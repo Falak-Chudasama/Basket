@@ -6,7 +6,8 @@ def create_embedding(text: str) -> list[float]:
 
     vector = model.encode(
         text,
-        normalize_embeddings=True
+        normalize_embeddings=True,
+        task="retrieval",
     )
 
     return vector.tolist()
@@ -20,7 +21,8 @@ def batch_encode(
     vectors = model.encode(
         texts,
         normalize_embeddings=True,
-        batch_size=64
+        batch_size=64,
+        task="retrieval"
     )
 
     return [vector.tolist() for vector in vectors]

@@ -72,6 +72,14 @@ class Chat:
 
         return session_id
 
+    def get_chat(self, session_id: str):
+        return self.collection.find_one(
+            {
+                "application": self.application,
+                "session_id": session_id
+            }
+        )
+
     def get_current_chat(self):
         return self.collection.find_one(
             {
@@ -97,7 +105,9 @@ class Chat:
         session_id: str,
         role: str = "user",
         content: str
-    ) -> None:
+    ) -> str:
+
+        current_chat = self.get_chat(session_id=session_id)
 
         self.collection.update_one(
             {
@@ -121,6 +131,9 @@ class Chat:
                 }
             }
         )
+
+        assert current_chat is not None
+        return f"{session_id}:{current_chat['session_length'] + 1}"
 
     def delete(
         self,
