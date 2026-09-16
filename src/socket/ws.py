@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from src.core.configs import WS_PATH
+from src.services.session.session import create_session
 from src.schemas.VoiceSchema import VoiceStartRequest
 from src.services.chat.chat_pipeline import PipelineEvent,VoicePipelineConfig,voice_to_voice
 from src.clients.llama_stt import (
@@ -28,7 +29,7 @@ class VoiceSession:
     def __init__(self, websocket: WebSocket) -> None:
         self.ws = websocket
         self.started = False
-        self.application: str | None = None
+        self.application: str | None = "quince"
         self.voice_config: VoiceStartRequest | None = None
 
         self.audio_buffer = bytearray()
@@ -364,6 +365,8 @@ async def stt_stream(websocket: WebSocket) -> None:
     await websocket.accept()
     session = VoiceSession(websocket)
     logger.info("VOICE WS CONNECTED: client=%s", websocket.client)
+
+    create_session(session.application)
 
     try:
         await session.send_ready()

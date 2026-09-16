@@ -36,6 +36,7 @@ quince_chats = Chat(
 
 quince_bm25_memory = BM25()
 
+quince_active_session_id: str | None = None
 
 # ============================================================
 # SHARED APPLICATION STATE
@@ -53,4 +54,5 @@ states = {
     "quince_chats": quince_chats,
     "quince_commands": quince_commands,
     "quince_bm25_memory": quince_bm25_memory,
+    "quince_active_session_id": None
 }
