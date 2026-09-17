@@ -60,17 +60,11 @@ def _build_message(request: ChatRequest):
         system_parts.append(request.system_prompt)
 
     for message in request.messages:
-        print(f"LLM MESSAGE: {message.role}/{message.content}") # DELIT LOG
-
         if message.role == "system":
             system_parts.append(str(message.content))
         else:
-            conversation_messages.append({
-                "role": message.role,
-                "content": message.content,
-            })
+            conversation_messages.append({ "role": message.role,"content": message.content })
 
-    print("\n\n\n")
     final_messages: list[dict] = []
 
     if system_parts:

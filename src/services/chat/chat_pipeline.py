@@ -490,6 +490,82 @@ async def llm_to_speech(*, messages: list[Message], config: VoicePipelineConfig)
 # TEXT -> VOICE
 # ============================================================
 
+async def retrieve_context(
+    *,
+    text: str,
+    config: VoicePipelineConfig,
+    messages: list[Message] | None = None,
+) -> list[Message]:
+
+    base_messages = list(messages or [])
+    existing_system_messages: list[str] = []
+    conversation_history: list[Message] = []
+
+    for message in base_messages:
+        if message.role == "system":
+            existing_system_messages.append(str(message.content))
+        else:
+            conversation_history.append(message)
+
+    candidates = await retrieve(query=text,application=config.application)
+
+    user_prompts = []
+    assistant_responses = []
+    commands = list(_get_commands(application=config.application).get_all())
+
+    for candidate in candidates:
+        if candidate["metadata"]["source"] == "user":
+            user_prompts.append(candidate)
+        elif candidate["metadata"]["source"] == "assistant":
+            assistant_responses.append(candidate)
+
+    system_parts: list[str] = []
+    system_parts.extend(existing_system_messages)
+
+    if len(user_prompts) > 0:
+        system_parts.append(
+            "Relevant Previous User Prompts:\n"
+            + "\n".join(
+                user_prompt["document"]
+                for user_prompt in user_prompts
+            )
+        )
+
+    if len(assistant_responses) > 0:
+        system_parts.append(
+            "Relevant Previous Your Responses:\n"
+            + "\n".join(
+                assistant_response["document"]
+                for assistant_response in assistant_responses
+            )
+        )
+
+    if len(commands) > 0:
+        system_parts.append(
+            "Follow These Commands:\n"
+            + "\n".join(
+                command["command"]
+                for command in commands
+            )
+        )
+
+    if config.application == "quince":
+        previous_response = quince_chats.get_immediate_previous_response()
+        system_parts.append("Your Exact Previous Response:\n" + previous_response)
+    
+    conversation: list[Message] = []
+
+    if system_parts:
+        conversation.append(Message(role="system",content="\n\n".join(system_parts)))
+
+    conversation.extend(conversation_history)
+
+    conversation.append(Message(role="user",content=text))
+
+    append_chat_to_memory(application=config.application,content=text, source="user")
+    
+    return conversation
+
 async def text_to_voice(
     *,
     text: str,
@@ -500,10 +576,7 @@ async def text_to_voice(
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
-    # TODO: RAG implementation here as well
-
-    conversation = list(messages or [])
-    conversation.append(Message(role="user", content=text))
+    conversation = await retrieve_context(text=text, config=config, messages=messages)
 
     yield PipelineEvent(type="pipeline.started", data={"mode": "text_to_voice"})
 
@@ -563,99 +636,7 @@ async def voice_to_voice(
     # BUILD CONVERSATION
     # --------------------------------------------------------
 
-    base_messages = list(messages or [])
-
-    existing_system_messages: list[str] = []
-    conversation_history: list[Message] = []
-
-    for message in base_messages:
-        if message.role == "system":
-            existing_system_messages.append(str(message.content))
-        else:
-            conversation_history.append(message)
-
-    candidates = await retrieve(
-        query=transcript,
-        application=config.application,
-    )
-
-    user_prompts = []
-    assistant_responses = []
-    commands = list(
-        _get_commands(application=config.application).get_all()
-    )
-
-    for candidate in candidates:
-        if candidate["metadata"]["source"] == "user":
-            user_prompts.append(candidate)
-        elif candidate["metadata"]["source"] == "assistant":
-            assistant_responses.append(candidate)
-
-    system_parts: list[str] = []
-
-    system_parts.extend(existing_system_messages)
-
-    if len(user_prompts) > 0:
-        system_parts.append(
-            "Relevant Previous User Prompts:\n"
-            + "\n".join(
-                user_prompt["document"]
-                for user_prompt in user_prompts
-            )
-        )
-
-    if len(assistant_responses) > 0:
-        system_parts.append(
-            "Relevant Previous Your Responses:\n"
-            + "\n".join(
-                assistant_response["document"]
-                for assistant_response in assistant_responses
-            )
-        )
-
-    if len(commands) > 0:
-        system_parts.append(
-            "Follow These Commands:\n"
-            + "\n".join(
-                command["command"]
-                for command in commands
-            )
-        )
-
-    if config.application == "quince":
-        previous_response = (
-            quince_chats.get_immediate_previous_response()
-        )
-
-        system_parts.append(
-            "Your Exact Previous Response:\n"
-            + previous_response
-        )
-    
-    conversation: list[Message] = []
-
-    if system_parts:
-        conversation.append(
-            Message(
-                role="system",
-                content="\n\n".join(system_parts),
-            )
-        )
-
-    conversation.extend(conversation_history)
-
-    conversation.append(
-        Message(
-            role="user",
-            content=transcript,
-        )
-    )
-
-    append_chat_to_memory(
-        application=config.application,
-        content=transcript,
-        source="user",
-    )
+    conversation = await retrieve_context(text=transcript, config=config, messages=messages)
 
     # --------------------------------------------------------
     # LLM -> TTS
