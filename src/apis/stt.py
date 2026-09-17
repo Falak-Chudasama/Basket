@@ -15,15 +15,6 @@ async def transcribe(
     prompt: str | None = Form(default=None),
     stream: bool = Form(default=False),
 ):
-    """
-    Batch STT endpoint.
-
-    Live microphone streaming is exposed separately through the WebSocket
-    endpoint /stt/stream. The `stream` field exists here for API/schema
-    consistency, but a multipart upload cannot become a true realtime
-    microphone stream after the file has already been received.
-    """
-
     if stream:
         raise HTTPException(
             status_code=400,

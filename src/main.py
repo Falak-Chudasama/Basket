@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from src.apis.llm import llmRouter
 from src.apis.stt import sttRouter
 from src.apis.tts import ttsRouter
+from src.apis.context import context_router
 from src.socket.ws import router as wsRouter
 from src.jobs.jobs import run_jobs
 
@@ -21,9 +22,10 @@ app = FastAPI(
 app.include_router(llmRouter)
 app.include_router(sttRouter)
 app.include_router(ttsRouter)
+app.include_router(context_router)
 app.include_router(wsRouter)
 
 
 @app.get("/")
 def hello():
-    return {"message": "Basket is Serving!"}
+    return {"message": "Basket is Serving Fruits!"}

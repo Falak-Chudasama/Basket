@@ -15,27 +15,14 @@ llmRouter = APIRouter(
 )
 
 
-# ============================================================
-# CHAT
-# ============================================================
 
 @llmRouter.post("/chat")
 async def chat(req: ChatRequest):
     return await _chat(req)
 
-
-# ============================================================
-# GET AVAILABLE MODELS
-# ============================================================
-
 @llmRouter.get("/models")
 async def get_models():
     return await _get_models()
-
-
-# ============================================================
-# LOAD MODEL
-# ============================================================
 
 @llmRouter.post("/load")
 async def load_model(
@@ -55,11 +42,6 @@ async def load_model(
         model_id=model_id
     )
 
-
-# ============================================================
-# UNLOAD MODEL
-# ============================================================
-
 @llmRouter.post("/unload")
 async def unload_model(
     instance_id: str,
@@ -73,11 +55,6 @@ async def unload_model(
     return await _unload_model(
         instance_id
     )
-
-
-# ============================================================
-# UNLOAD ALL MODELS
-# ============================================================
 
 @llmRouter.post("/unload-all")
 async def unload_all_models():

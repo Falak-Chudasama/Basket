@@ -3,6 +3,7 @@ from src.services.vectordb.vectordb import client
 from src.services.vectordb.memory import Memory
 from src.services.db.commands.commands import Command
 from src.services.db.chats.chats import Chat
+from src.services.db.memory.memory import Memory
 from src.services.bm25.bm25 import BM25
 
 
@@ -22,6 +23,11 @@ lychee_db = get_db("lychee")
 
 quince_memory = Memory(
     application="quince"
+)
+
+quince_db_memory = Memory(
+    db_name="quince",
+    application="quince",
 )
 
 quince_commands = Command(
@@ -51,6 +57,7 @@ states = {
     "chroma_client": client,
 
     "quince_memory": quince_memory,
+    "quince_db_memory": quince_db_memory,
     "quince_chats": quince_chats,
     "quince_commands": quince_commands,
     "quince_bm25_memory": quince_bm25_memory,
