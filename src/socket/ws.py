@@ -10,6 +10,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from src.core.configs import WS_PATH
 from src.services.session.session import create_session
 from src.schemas.VoiceSchema import VoiceStartRequest
+from src.jobs.refresh_session_job import clear_session
 from src.services.chat.chat_pipeline import PipelineEvent,VoicePipelineConfig,voice_to_voice
 from src.clients.llama_stt import (
     STREAM_MIN_AUDIO_SECONDS,
@@ -366,6 +367,8 @@ async def stt_stream(websocket: WebSocket) -> None:
     await websocket.accept()
     session = VoiceSession(websocket)
     logger.info("VOICE WS CONNECTED: client=%s", websocket.client)
+
+    clear_session()
 
     create_session(session.application)
 

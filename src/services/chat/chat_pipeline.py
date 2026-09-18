@@ -18,6 +18,7 @@ from src.schemas.ChatSchema import ChatRequest, Message
 from src.services.session.session import append_chat_to_memory
 from src.services.retrieval.chat_retriever import retrieve, _get_commands
 from src.core.state import quince_chats
+from src.utils.utils import get_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -490,6 +491,14 @@ async def llm_to_speech(*, messages: list[Message], config: VoicePipelineConfig)
 # TEXT -> VOICE
 # ============================================================
 
+def get_informational_messages() -> list[Message]:
+    messages = []
+
+    datetime = get_datetime()
+    messages.append(Message(role='system', content=f"DateTime at the moment: {datetime}"))
+
+    return messages
+
 async def retrieve_context(
     *,
     text: str,
@@ -558,10 +567,12 @@ async def retrieve_context(
     if system_parts:
         conversation.append(Message(role="system",content="\n\n".join(system_parts)))
 
+    informational_messages = get_informational_messages()
+
     conversation.extend(conversation_history)
+    conversation.extend(informational_messages)
 
     conversation.append(Message(role="user",content=text))
-
     append_chat_to_memory(application=config.application,content=text, source="user")
     
     return conversation
