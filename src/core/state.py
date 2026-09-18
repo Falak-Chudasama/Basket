@@ -3,7 +3,7 @@ from src.services.vectordb.vectordb import client
 from src.services.vectordb.memory import Memory
 from src.services.db.commands.commands import Command
 from src.services.db.chats.chats import Chat
-from src.services.db.memory.memory import Memory
+from src.services.db.memory.memory import DBMemory
 from src.services.bm25.bm25 import BM25
 
 
@@ -25,7 +25,7 @@ quince_memory = Memory(
     application="quince"
 )
 
-quince_db_memory = Memory(
+quince_db_memory = DBMemory(
     db_name="quince",
     application="quince",
 )

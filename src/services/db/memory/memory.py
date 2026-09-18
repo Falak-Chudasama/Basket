@@ -1,6 +1,6 @@
 from src.services.db.db import get_db
 
-class Memory:
+class DBMemory:
     def __init__(self, db_name: str = "quince", application: str = "quince"):
         self.db = get_db(db_name)
         self.application = application
