@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,7 +8,7 @@ MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:7005/")
 BASKET_DB: str = os.getenv("BASKET_DB", "basket")
 
 VECTOR_DB_PATH: str = "./chromadb"
-
+PATH_TO_QUINCE = Path(r"C:\Users\ADMIN\OneDrive\CODES\Projects\Projects\Basket\fruits\quince")
 
 # Primary -> jinaai/jina-embeddings-v5-text-nano
 # Secondary -> Qwen/Qwen3-Embedding-0.6B

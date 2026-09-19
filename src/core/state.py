@@ -5,6 +5,7 @@ from src.services.db.commands.commands import Command
 from src.services.db.chats.chats import Chat
 from src.services.db.memory.memory import DBMemory
 from src.services.bm25.bm25 import BM25
+from src.clients.quince_mcp import QuinceMCPClient
 
 
 # ============================================================
@@ -42,8 +43,6 @@ quince_chats = Chat(
 
 quince_bm25_memory = BM25()
 
-quince_active_session_id: str | None = None
-
 # ============================================================
 # SHARED APPLICATION STATE
 # ============================================================
@@ -61,5 +60,5 @@ states = {
     "quince_chats": quince_chats,
     "quince_commands": quince_commands,
     "quince_bm25_memory": quince_bm25_memory,
-    "quince_active_session_id": None
+    "quince_active_session_id": None,
 }

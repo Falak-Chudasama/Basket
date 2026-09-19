@@ -26,6 +26,27 @@ app.include_router(context_router)
 app.include_router(wsRouter)
 
 
+from src.clients.quince_mcp import quince_mcp
+
 @app.get("/")
-def hello():
-    return {"message": "Basket is Serving Fruits!"}
+async def hello():
+    # return {"message": "Basket is Serving Fruits!"}
+    tools = await quince_mcp.get_tools()
+
+    parsed_tools = []
+
+    print('\n\n')
+    for tool in tools:
+        print(f"name: {tool.name}")
+        print(f"description: {tool.description}")
+        print(f"input_schema: {tool.input_schema}")
+        parsed_tools.append({
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+        })
+        print('\n')
+    print('\n')
+
+
+    return f"{parsed_tools}"
