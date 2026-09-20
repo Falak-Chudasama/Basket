@@ -30,23 +30,6 @@ from src.clients.quince_mcp import quince_mcp
 
 @app.get("/")
 async def hello():
-    # return {"message": "Basket is Serving Fruits!"}
-    tools = await quince_mcp.get_tools()
+    tools = await quince_mcp.get_root()
 
-    parsed_tools = []
-
-    print('\n\n')
-    for tool in tools:
-        print(f"name: {tool.name}")
-        print(f"description: {tool.description}")
-        print(f"input_schema: {tool.input_schema}")
-        parsed_tools.append({
-            "name": tool.name,
-            "description": tool.description,
-            "input_schema": tool.input_schema,
-        })
-        print('\n')
-    print('\n')
-
-
-    return f"{parsed_tools}"
+    return {"tools": tools}
