@@ -49,12 +49,15 @@ REM  QUINCE LLM:
 REM      Explicit CUDA-enabled llama.cpp build
 REM      C:\llama-cuda\llama-server.exe
 REM
-REM  QWEN3-ASR:
-REM      Existing llama-server.exe available through PATH
+REM  NEMOTRON ASR:
+REM      Served by NeMo-Speech.cpp
 REM      CPU ONLY
 REM ============================================================
 
 set "LLAMA_CUDA_EXE=C:\llama-cuda\llama-server.exe"
+
+REM NeMo-Speech.cpp Windows installation.
+set "NEMO_SPEECH_EXE=%LOCALAPPDATA%\Programs\NeMoSpeech\bin\nemo-speech.exe"
 
 
 REM ============================================================
@@ -77,21 +80,31 @@ set "LLM_PARALLEL=1"
 
 
 REM ============================================================
-REM  QWEN3-ASR
-REM  
-REM  SMALLER MODEL
-REM  set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\Qwen3-ASR-0.6B-Q8_0.gguf"
-REM  set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
-REM  
-REM  BIGGER MODEL
-REM  set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\Qwen3-ASR-1.7B-Q8_0.gguf"
-REM  set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
+REM  NEMOTRON 3.5 ASR
+REM
+REM  Model:
+REM      nvidia/nemotron-3.5-asr-streaming-0.6b
+REM
+REM  Short model name:
+REM      nemotron-3.5
+REM
+REM  Backend:
+REM      NeMo-Speech.cpp
+REM
+REM  Device:
+REM      CPU ONLY
+REM
+REM  Download once with:
+REM      nemo-speech pull nemotron-3.5
+REM
+REM  Server:
+REM      127.0.0.1:%STT_PORT%
 REM ============================================================
 
-@REM  set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\Qwen3-ASR-1.7B-Q8_0.gguf"
-@REM  set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
-set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\Qwen3-ASR-0.6B-Q8_0.gguf"
-set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
+set "ASR_MODEL_ID=nemotron-3.5"
+
+REM Finalize an utterance after 800 ms of trailing silence.
+set "ASR_ENDPOINTING_EOU_MS=800"
 
 
 REM ============================================================

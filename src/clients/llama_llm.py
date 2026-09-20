@@ -113,6 +113,8 @@ def _build_request(request: ChatRequest, stream: bool):
         payload["top_p"] = request.top_p
     if request.max_tokens is not None:
         payload["max_tokens"] = request.max_tokens
+    if request.repeat_penalty is not None:
+        payload["repeat_penalty"] = request.repeat_penalty
     if request.stop is not None:
         payload["stop"] = request.stop
     if request.seed is not None:
@@ -210,11 +212,27 @@ async def _chat_completion_non_streaming(request: ChatRequest):
         tool_calls = message.get("tool_calls") or []
 
         if not tool_calls:
-            logger.warning(
-                "LLM returned no tool call. finish_reason=%r content=%r",
-                choices[0].get("finish_reason"),
-                message.get("content"),
-            )
+            finish_reason = choices[0].get("finish_reason")
+            content = message.get("content")
+
+            if finish_reason == "length":
+                # The generation was cut off by max_tokens rather than
+                # stopping on its own. In the agent tool-selection step this
+                # usually means decoding collapsed into a repeating loop
+                # (e.g. the same short phrase over and over) rather than the
+                # model deliberately choosing not to call a tool - flag it
+                # louder so it doesn't blend in with ordinary declines.
+                logger.error(
+                    "LLM hit max_tokens with no tool call (likely decoding "
+                    "collapse/repetition loop). content=%r",
+                    content,
+                )
+            else:
+                logger.warning(
+                    "LLM returned no tool call. finish_reason=%r content=%r",
+                    finish_reason,
+                    content,
+                )
             return None
 
         first_tool_call = tool_calls[0] or {}
