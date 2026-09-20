@@ -4,6 +4,7 @@ import io
 import logging
 import time
 import wave
+import json
 from dataclasses import dataclass
 from typing import AsyncIterable, AsyncIterator
 from fastapi import HTTPException
@@ -11,14 +12,15 @@ from fastapi.responses import StreamingResponse
 from starlette.datastructures import Headers, UploadFile
 
 from src.clients.llama_stt import _transcribe
-from src.clients.lm_studio import streaming_completion
-from src.clients.llama_llm import _chat_completion_streaming
+from src.clients.llama_llm import _chat_completion_streaming, _chat_completion_non_streaming
 from src.clients.pocket_tts import stream_tts_pcm
 from src.schemas.ChatSchema import ChatRequest, Message
 from src.services.session.session import append_chat_to_memory
 from src.services.retrieval.chat_retriever import retrieve, _get_commands
+from src.core.configs import MCP_TOOL_CALL_LIMIT
 from src.core.state import quince_chats
 from src.utils.utils import get_datetime
+from src.clients.quince_mcp import quince_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +320,37 @@ async def speech_to_text(*, audio: bytes, prompt: str | None = None) -> str:
 # LLM
 # ============================================================
 
-async def stream_llm(*, messages: list[Message], config: VoicePipelineConfig) -> AsyncIterator[str]:
+async def get_llm_response(*, messages: list[Message], config: VoicePipelineConfig, tools: list[Any] = [], abstract: bool = False, abstract_tool_use: bool = False):
+    started_at = time.perf_counter()
+    logger.info("LLM START model=%r messages=%d (non-streaming)" , config.model, len(messages))
+
+    request = ChatRequest(
+        model=config.model,
+        messages=messages,
+        stream=False,
+        temperature=config.temperature,
+        top_p=config.top_p,
+        max_tokens=config.max_tokens,
+        stop=config.stop,
+        seed=config.seed,
+        system_prompt=config.system_prompt,
+        abstracted=abstract,
+        abstract_tool_use=abstract_tool_use,
+        tools=tools,
+        tool_choice="required" if tools else "none"
+    )
+
+    try:
+        response = await _chat_completion_non_streaming(request)
+    except Exception:
+        logger.exception("LLM REQUEST FAILED after %.3fs (non-streaming)", time.perf_counter() - started_at)
+        raise
+
+    logger.info("LLM COMPLETE in %.3fs (non-streaming)", time.perf_counter() - started_at)
+
+    return response
+
+async def get_llm_response_stream(*, messages: list[Message], config: VoicePipelineConfig) -> AsyncIterator[str]:
     started_at = time.perf_counter()
     logger.info("LLM START model=%r messages=%d", config.model, len(messages))
 
@@ -412,7 +444,7 @@ async def llm_to_speech(*, messages: list[Message], config: VoicePipelineConfig)
 
     async def producer() -> None:
         try:
-            async for token in stream_llm(messages=messages, config=config):
+            async for token in get_llm_response_stream(messages=messages, config=config):
                 full_text.append(token)
                 await event_queue.put(PipelineEvent(type="llm.token", data=token))
 
@@ -577,6 +609,135 @@ async def retrieve_context(
     
     return conversation
 
+
+AGENT_SYSTEM_PROMPT = """You are currently operating in an agentic tool-execution loop.
+
+Do not generate conversational content.
+Do not explain anything.
+Do not narrate your actions.
+Do not acknowledge the user.
+Do not ask questions unless information is genuinely required to execute a requested task.
+
+Your response MUST be a tool call.
+
+Execute only tasks explicitly requested by the user.
+Do not invent, extend, or infer additional tasks.
+
+After every requested task has been successfully completed, use the terminate tool.
+
+Do not perform any additional action once all requested tasks are complete.
+"""
+
+async def agent_loop(
+    messages: list[Message],
+    config: VoicePipelineConfig,
+) -> list[Message]:
+
+    agent_messages = list(messages)
+
+    agent_messages.insert(
+        0,
+        Message(
+            role="system",
+            content=AGENT_SYSTEM_PROMPT,
+        ),
+    )
+
+    root_result = await quince_mcp.get_root()
+
+    if not root_result.get("success"):
+        logger.error("Failed to retrieve root MCP tools.")
+        return messages
+
+    tools = quince_mcp.get_openai_tools(root_result)
+
+    for _ in range(MCP_TOOL_CALL_LIMIT):
+        tool_call = await get_llm_response(
+            messages=agent_messages,
+            config=config,
+            abstract_tool_use=True,
+            tools=tools,
+        )
+
+        if not tool_call:
+            logger.warning("Agent received no tool call.")
+            break
+
+        tool_id = tool_call.get("name")
+        arguments_str = tool_call.get("arguments", "{}")
+        call_id = tool_call.get("id")
+
+        print("\n\n")
+        print(f"Tool Call: %s", tool_id)
+        print("\n\n")
+
+        logger.info("Tool Call: %s", tool_id)
+
+        if not tool_id:
+            logger.warning("Agent received tool call without a name.")
+            break
+
+        try:
+            arguments = json.loads(arguments_str or "{}")
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(
+                "Invalid tool arguments for %s: %r",
+                tool_id,
+                arguments_str,
+            )
+            break
+
+        agent_messages.append(
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=[
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_id,
+                            "arguments": arguments_str,
+                        },
+                    }
+                ],
+            )
+        )
+
+        tool_call_result = await quince_mcp.tool_call(
+            tool_id,
+            arguments,
+        )
+
+        agent_messages.append(
+            Message(
+                role="tool",
+                tool_call_id=call_id,
+                content=json.dumps(tool_call_result),
+            )
+        )
+
+        success = tool_call_result.get("success")
+        terminate = tool_call_result.get("terminate")
+        was_category_call = tool_call_result.get("was_category_call")
+
+        if not success:
+            logger.warning(
+                "Tool execution failed: %s",
+                tool_call_result.get("error"),
+            )
+            break
+
+        if terminate:
+            break
+
+        if was_category_call:
+            tools = quince_mcp.get_openai_tools(tool_call_result)
+
+    agent_messages.pop(0)
+
+    return agent_messages
+
 async def text_to_voice(
     *,
     text: str,
@@ -648,6 +809,12 @@ async def voice_to_voice(
     # --------------------------------------------------------
 
     conversation = await retrieve_context(text=transcript, config=config, messages=messages)
+
+    # --------------------------------------------------------
+    # AGENTIC LOOP
+    # --------------------------------------------------------
+
+    conversation = await agent_loop(messages=conversation,config=config)
 
     # --------------------------------------------------------
     # LLM -> TTS

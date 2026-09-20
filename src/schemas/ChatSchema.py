@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 class Message(BaseModel):
     role: Literal["system","user","assistant","tool"]
     content: Any
+    tool_calls: Optional[List[dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
 
 class ChatRequest(BaseModel):
     model: Optional[str] = None
@@ -16,4 +18,7 @@ class ChatRequest(BaseModel):
     seed: Optional[int] = None
     system_prompt: Optional[str] = None
     abstracted: bool = True
+    abstract_tool_use: bool = False
     thinking: bool = False
+    tools: list[dict[str, Any]] = []
+    tool_choice: Literal["required", "auto", "none"] = "none"

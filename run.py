@@ -7,5 +7,5 @@ if __name__ == "__main__":
         "src.main:app",
         host=BASKET_HOST,
         port=BASKET_PORT,
-        reload=not PRODUCTION,
+        reload=False,
     )

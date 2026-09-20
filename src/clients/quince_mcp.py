@@ -79,6 +79,14 @@ class QuinceMCPClient:
     async def get_root(self):
         return await self.tool_call(tool_id="root")
 
+    def get_openai_tools(self, result):
+        tools = [
+            self._to_openai_tool(tool)
+            for tool in result["children"]
+        ]
+
+        return tools
+
     async def tool_call(
         self,
         tool_id: str,
@@ -90,14 +98,7 @@ class QuinceMCPClient:
             # TODO: handle error or pass it to utility function
             pass
 
-        data = json.loads(result.content[0].text)
-
-        tools = [
-            self._to_openai_tool(tool)
-            for tool in data["children"]
-        ]
-
-        return tools
+        return json.loads(result.content[0].text)
 
 
 quince_mcp = QuinceMCPClient()

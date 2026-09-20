@@ -1,5 +1,6 @@
 import httpx
 import json
+import logging
 from openai import OpenAI
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,6 +12,8 @@ from src.core.configs import (
     LLM_ROOT_SYSTEM_PROMPT
 )
 from src.schemas.ChatSchema import ChatRequest
+
+logger = logging.getLogger(__name__)
 
 BASE_LLAMA_URL = f"http://{LLM_HOST}:{LLM_PORT}/v1"
 CHAT_COMPLETION_URL = f"{BASE_LLAMA_URL}/chat/completions"
@@ -62,8 +65,20 @@ def _build_message(request: ChatRequest):
     for message in request.messages:
         if message.role == "system":
             system_parts.append(str(message.content))
-        else:
-            conversation_messages.append({ "role": message.role,"content": message.content })
+            continue
+
+        item = {
+            "role": message.role,
+            "content": message.content,
+        }
+
+        if message.tool_calls is not None:
+            item["tool_calls"] = message.tool_calls
+
+        if message.tool_call_id is not None:
+            item["tool_call_id"] = message.tool_call_id
+
+        conversation_messages.append(item)
 
     final_messages: list[dict] = []
 
@@ -87,6 +102,11 @@ def _build_request(request: ChatRequest, stream: bool):
         },
     }
 
+    if request.tools is not None:
+        payload["tools"] = request.tools
+        payload["parallel_tool_calls"] = False
+    if request.tool_choice is not None:
+        payload["tool_choice"] = request.tool_choice
     if request.temperature is not None:
         payload["temperature"] = request.temperature
     if request.top_p is not None:
@@ -127,14 +147,86 @@ async def _chat_completion_non_streaming(request: ChatRequest):
     model = request.model or LLM_DEFAULT_ID
     await _ensure_model_loaded(model)
 
-    response = client.chat.completions.create(
-        **_build_request(request, stream=False)
+    timeout = httpx.Timeout(
+        connect=10.0,
+        read=None,
+        write=30.0,
+        pool=30.0
     )
 
-    if request.abstracted:
-        return _abstract_response(response.choices[0].message.content)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as http_client:
+            response = await http_client.post(
+                CHAT_COMPLETION_URL,
+                json=_build_request(request, stream=False),
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                }
+            )
 
-    return response
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to connect to llama.cpp."
+        )
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="llama.cpp request timed out."
+        )
+
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"llama.cpp HTTP error: {exc}"
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text
+        )
+
+    data = response.json()
+
+    if request.abstracted:
+        choices = data.get("choices", [])
+
+        if not choices:
+            return ""
+
+        message = choices[0].get("message", {})
+        return _abstract_response(message.get("content"))
+
+    if request.abstract_tool_use:
+        choices = data.get("choices", [])
+
+        if not choices:
+            return None
+
+        message = choices[0].get("message", {})
+        tool_calls = message.get("tool_calls") or []
+
+        if not tool_calls:
+            logger.warning(
+                "LLM returned no tool call. finish_reason=%r content=%r",
+                choices[0].get("finish_reason"),
+                message.get("content"),
+            )
+            return None
+
+        first_tool_call = tool_calls[0] or {}
+        tool_call = first_tool_call.get("function") or {}
+
+        return {
+            "id": first_tool_call.get("id"),
+            "name": tool_call.get("name"),
+            "arguments": tool_call.get("arguments", "{}"),
+        }
+
+    return data
 
 async def _chat_completion_streaming(request: ChatRequest):
     model = request.model or LLM_DEFAULT_ID

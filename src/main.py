@@ -30,6 +30,5 @@ from src.clients.quince_mcp import quince_mcp
 
 @app.get("/")
 async def hello():
-    tools = await quince_mcp.get_root()
-
+    tools = await quince_mcp.tool_call("root")
     return {"tools": tools}
