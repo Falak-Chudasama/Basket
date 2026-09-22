@@ -211,7 +211,7 @@ REM  Keep this command on ONE LINE because Windows cmd/start
 REM  quoting is sensitive.
 REM ------------------------------------------------------------
 
-start "Basket - STT" cmd /k ""%NEMO_SPEECH_EXE%" serve --asr-model "%ASR_MODEL_ID%" --asr.backend.gpu -1 --host %HOST% --port %STT_PORT% --endpointing --stop-history-eou-ms %ASR_ENDPOINTING_EOU_MS%"
+start "Basket - STT" cmd /k ""%NEMO_SPEECH_EXE%" serve --asr-model "%ASR_MODEL_ID%" --asr.backend.gpu -1 --host %HOST% --port %STT_PORT%"
 
 echo       Nemotron 3.5 ASR server launched.
 echo.

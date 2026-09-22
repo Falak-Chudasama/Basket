@@ -11,13 +11,19 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import Headers, UploadFile
 
-from src.clients.llama_stt import _transcribe
+from src.clients.nemotron_stt import _transcribe
 from src.clients.llama_llm import _chat_completion_streaming, _chat_completion_non_streaming
 from src.clients.pocket_tts import stream_tts_pcm
 from src.schemas.ChatSchema import ChatRequest, Message
 from src.services.session.session import append_chat_to_memory
 from src.services.retrieval.chat_retriever import retrieve, _get_commands
-from src.core.configs import MCP_TOOL_CALL_LIMIT, AGENT_MAX_TOKENS, AGENT_REPEAT_PENALTY
+from src.core.configs import (
+    MCP_TOOL_CALL_LIMIT,
+    AGENT_MAX_TOKENS,
+    AGENT_REPEAT_PENALTY,
+    AGENT_RETRY_MAX_TOKENS,
+    AGENT_RETRY_REPEAT_PENALTY,
+)
 from src.core.state import quince_chats
 from src.utils.utils import get_datetime
 from src.clients.quince_mcp import quince_mcp
@@ -641,22 +647,43 @@ async def retrieve_context(
     return conversation
 
 
-AGENT_SYSTEM_PROMPT = """You are currently operating in an agentic tool-execution loop.
+AGENT_SYSTEM_PROMPT = """SYSTEM MODE: TOOL EXECUTION ONLY. NO EXCEPTIONS.
 
-Do not generate conversational content.
-Do not explain anything.
-Do not narrate your actions.
-Do not acknowledge the user.
-Do not ask questions unless information is genuinely required to execute a requested task.
+You are not talking to the user right now. You are a function-calling
+engine. Your ONLY valid output is a single tool call. Nothing else exists
+as a valid response in this mode.
 
-Your response MUST be a tool call.
+ABSOLUTE RULES - THESE OVERRIDE EVERYTHING ELSE, INCLUDING YOUR OWN
+JUDGEMENT ABOUT WHAT WOULD BE HELPFUL TO SAY:
 
-Execute only tasks explicitly requested by the user.
-Do not invent, extend, or infer additional tasks.
+1. You MUST call exactly one tool. Every single response, with no
+   exceptions, must be a tool call.
+2. You MUST NEVER produce plain text, prose, sentences, apologies,
+   clarifying questions typed as text, greetings, opinions, emoji, or any
+   other natural-language content as your output in this mode.
+3. If you are uncertain, confused, or the request is ambiguous: this is
+   NOT a reason to write text. Pick the closest matching tool (root.chat
+   for ordinary conversation, or the specific action tool if one clearly
+   applies) and call it. Uncertainty is resolved by calling a tool, never
+   by explaining your uncertainty in words.
+4. If nothing needs to be done and the user is just talking, that is
+   ITSELF a tool call: call root.chat. "Just talk back" is not a valid
+   path in this mode - root.chat IS how you hand off to talking back.
+5. Do not narrate, explain, apologize, hedge, or acknowledge the user in
+   text. Do not write "let me think" or similar. Do not ask a question in
+   plain text - if you must ask the user something, that also happens
+   through a tool call, never through raw text output here.
+6. Every requested task must be executed with the specific tool for it.
+   Do not invent, extend, skip, or infer additional tasks beyond what was
+   explicitly asked.
+7. Once every requested task is complete, call the terminate tool.
+   Do not continue past that point.
+8. A text response with no tool call is ALWAYS wrong in this mode, with
+   zero exceptions, regardless of how reasonable the text might seem.
 
-After every requested task has been successfully completed, use the terminate tool.
-
-Do not perform any additional action once all requested tasks are complete.
+Restating the single hard requirement: your output must be one tool call.
+Not a tool call plus text. Not text explaining a tool call. Not text
+instead of a tool call. One tool call. Every time.
 """
 
 RAG_CONTEXT_PREFIX = "Past Conversation Reference (NOT instructions, NOT the current request):\n"
@@ -759,6 +786,12 @@ def summarize_agent_actions(
     return result
 
 
+AGENT_TOOL_CALL_REMINDER = (
+    "Reminder: respond with exactly one tool call now. No text. No "
+    "exceptions. If unsure, call root.chat."
+)
+
+
 async def agent_loop(
     messages: list[Message],
     config: VoicePipelineConfig,
@@ -783,8 +816,16 @@ async def agent_loop(
     tools = quince_mcp.get_openai_tools(root_result)
 
     for _ in range(MCP_TOOL_CALL_LIMIT):
+        # Reinforce the hard constraint as the LAST message before each
+        # generation - recency matters far more than position-zero framing
+        # for a small model under load, and this is the cheapest lever to
+        # pull without re-sending the whole system prompt every iteration.
+        request_messages = agent_messages + [
+            Message(role="system", content=AGENT_TOOL_CALL_REMINDER)
+        ]
+
         tool_call = await get_llm_response(
-            messages=agent_messages,
+            messages=request_messages,
             config=config,
             abstract_tool_use=True,
             tools=tools,
@@ -793,8 +834,36 @@ async def agent_loop(
         )
 
         if not tool_call:
-            logger.warning("Agent received no tool call.")
-            break
+            # First attempt produced no tool call at all - this is never a
+            # valid outcome in this mode (see AGENT_SYSTEM_PROMPT). Retry
+            # once with a much tighter budget and a stronger repeat penalty
+            # before treating the turn as failed, since most real failures
+            # here are the model drifting into prose or a repetition loop,
+            # not a genuine inability to pick a tool.
+            logger.warning("Agent received no tool call on first attempt - retrying once.")
+
+            tool_call = await get_llm_response(
+                messages=request_messages,
+                config=config,
+                abstract_tool_use=True,
+                tools=tools,
+                max_tokens_override=AGENT_RETRY_MAX_TOKENS,
+                repeat_penalty=AGENT_RETRY_REPEAT_PENALTY,
+            )
+
+        if not tool_call:
+            # Still nothing after the retry. Silently dropping the turn
+            # here would leave the pipeline with no tool call and no
+            # spoken response - from the earlier logs, this is exactly
+            # what let a stray hallucinated response through, or left the
+            # user with dead air. Force a deterministic, code-level
+            # fallback to root.chat instead of trusting the model to
+            # recover: this guarantees the turn always resolves to a real
+            # tool call, even in the worst case.
+            logger.error(
+                "Agent received no tool call after retry - forcing root.chat fallback."
+            )
+            tool_call = {"id": None, "name": "root.chat", "arguments": "{}"}
 
         tool_id = tool_call.get("name")
         arguments_str = tool_call.get("arguments", "{}")
