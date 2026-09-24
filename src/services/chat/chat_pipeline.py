@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import Headers, UploadFile
 
-from src.clients.nemotron_stt import _transcribe
+from src.clients.llama_stt import _transcribe
 from src.clients.llama_llm import _chat_completion_streaming, _chat_completion_non_streaming
 from src.clients.pocket_tts import stream_tts_pcm
 from src.schemas.ChatSchema import ChatRequest, Message

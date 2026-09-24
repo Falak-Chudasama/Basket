@@ -1,6 +1,6 @@
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from src.clients.nemotron_stt import _transcribe
+from src.clients.llama_stt import _transcribe
 
 
 sttRouter = APIRouter(prefix="/stt", tags=["STT"])

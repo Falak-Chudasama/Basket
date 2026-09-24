@@ -25,20 +25,9 @@ LLM_ROOT_SYSTEM_PROMPT = ""
 
 STT_HOST = os.getenv("STT_HOST", "127.0.0.1")
 STT_PORT = int(os.getenv("STT_PORT", "7002"))
-DEFAULT_STT_MODEL = os.getenv("DEFAULT_STT_MODEL", "nemotron-3.5")
-STT_LANGUAGE = os.getenv("STT_LANGUAGE", "en-US")
-
-STT_CONTEXT_BOOST = 5.0
-STT_SPEECH_CONTEXTS = [{
-    "phrases": ["Hey Quince", "Quince", "Hi Quince"],
-    "boost": STT_CONTEXT_BOOST
-}]
-
-def get_stt_speech_contexts() -> list[dict]:
-    return [
-        {"phrases": list(c["phrases"]), "boost": float(c["boost"])}
-        for c in STT_SPEECH_CONTEXTS
-    ]
+# Smaller Model: "Qwen3-ASR-0.6B-Q8_0"
+# Bigger Model: "Qwen3-ASR-1.7B-Q8_0"
+DEFAULT_STT_MODEL = "Qwen3-ASR-0.6B-Q8_0"
 
 TTS_HOST = os.getenv("TTS_HOST", "127.0.0.1")
 TTS_PORT = int(os.getenv("TTS_PORT", "7003"))

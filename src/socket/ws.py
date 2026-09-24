@@ -8,12 +8,12 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
-from src.core.configs import STT_HOST, STT_LANGUAGE, STT_PORT, WS_PATH
+from src.core.configs import STT_HOST, STT_PORT, WS_PATH
 from src.jobs.refresh_session_job import clear_session
 from src.schemas.VoiceSchema import VoiceStartRequest
 from src.services.chat.chat_pipeline import PipelineEvent, VoicePipelineConfig, voice_to_voice
 from src.services.session.session import create_session
-from src.clients.nemotron_stt import NemotronRealtimeSession, STREAM_SAMPLE_RATE, STREAM_SAMPLE_WIDTH
+from src.clients.llama_stt import LlamaRealtimeSession, STREAM_SAMPLE_RATE, STREAM_SAMPLE_WIDTH
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -28,8 +28,7 @@ class VoiceSession:
         self.audio_buffer = bytearray()
         self.last_partial_text = ""
         self.final_transcript = ""
-        self.stt_session: NemotronRealtimeSession | None = None
-        self.stt_event_task: asyncio.Task | None = None
+        self.stt_session: LlamaRealtimeSession | None = None
         self.send_lock = asyncio.Lock()
 
     def _json_event(self, event: PipelineEvent) -> dict[str, Any]:
@@ -57,57 +56,20 @@ class VoiceSession:
             "message": message,
         })
 
-    # Nemotron realtime STT
+    # Qwen3-ASR / llama.cpp
 
     async def _start_stt(self, prompt: str | None) -> None:
         cfg = self.require_config()
-        session = NemotronRealtimeSession(
+        session = LlamaRealtimeSession(
             host=STT_HOST,
             port=STT_PORT,
             sample_rate=cfg.sample_rate,
-            language=STT_LANGUAGE,
+            language="en",
             prompt=prompt,
         )
 
         await session.connect()
         self.stt_session = session
-        self.stt_event_task = asyncio.create_task(
-            self._forward_stt_events(session)
-        )
-
-    async def _forward_stt_events(self, session: NemotronRealtimeSession) -> None:
-        try:
-            while True:
-                event = await session.events.get()
-                event_type = event.get("type", "")
-
-                if event_type == "conversation.item.input_audio_transcription.delta":
-                    text = session.partial_text.strip()
-                    if text and text != self.last_partial_text:
-                        self.last_partial_text = text
-                        await self.send_json({
-                            "type": "stt.partial",
-                            "text": text,
-                        })
-                    continue
-
-                if event_type == "conversation.item.input_audio_transcription.completed":
-                    self.final_transcript = session.final_transcript.strip()
-                    continue
-
-                if event_type == "error":
-                    message = str(
-                        (event.get("error") or {}).get(
-                            "message",
-                            "Nemotron realtime STT error.",
-                        )
-                    )
-                    logger.error("Nemotron realtime STT error: %s", message)
-
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Nemotron STT event forwarder failed")
 
     async def _stop_stt(self, *, commit: bool) -> str:
         session = self.stt_session
@@ -117,10 +79,8 @@ class VoiceSession:
             return self.final_transcript.strip()
 
         try:
-            if commit and not session.final_event.is_set():
-                await session.commit()
-
             if commit and self.audio_buffer:
+                await session.commit()
                 transcript = await session.wait_for_final()
                 self.final_transcript = transcript.strip()
 
@@ -128,20 +88,6 @@ class VoiceSession:
 
         finally:
             await session.close()
-            await self._cancel_stt_event_task()
-
-    async def _cancel_stt_event_task(self) -> None:
-        task = self.stt_event_task
-        self.stt_event_task = None
-
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                logger.exception("Nemotron STT event task failed during cleanup")
 
     # Full pipeline
 
@@ -153,7 +99,7 @@ class VoiceSession:
             "WS PIPELINE: application=%r audio_bytes=%d final_stt=%s",
             self.application,
             len(self.audio_buffer),
-            "nemotron-realtime" if final_transcript else "fallback-full-buffer",
+            "qwen3-asr-full-buffer" if final_transcript else "fallback-full-buffer",
         )
 
         async def audio_source():
@@ -285,7 +231,7 @@ class VoiceSession:
         try:
             await self._start_stt(request.prompt)
         except Exception as exc:
-            logger.exception("Nemotron STT START failed")
+            logger.exception("Qwen3-ASR START failed")
             await self.send_error("stt_unavailable", str(exc))
             self.voice_config = None
             return
@@ -293,7 +239,7 @@ class VoiceSession:
         self.started = True
 
         logger.info(
-            "START accepted: application=%r llm_model=%r stt_model=nemotron-3.5",
+            "START accepted: application=%r llm_model=%r stt_model=qwen3-asr-0.6b",
             self.application,
             request.llm.model,
         )
@@ -328,7 +274,7 @@ class VoiceSession:
 
             if final_transcript:
                 logger.info(
-                    "Nemotron FINAL STT transcript=%r",
+                    "Qwen3-ASR FINAL STT transcript=%r",
                     final_transcript,
                 )
 
@@ -358,7 +304,7 @@ class VoiceSession:
                 await session.clear()
             except Exception:
                 logger.exception(
-                    "Failed to clear Nemotron STT buffer during cancellation"
+                    "Failed to clear Qwen3-ASR buffer during cancellation"
                 )
 
         await self._stop_stt(commit=False)
@@ -395,7 +341,7 @@ class VoiceSession:
         if session is None:
             await self.send_error(
                 "stt_unavailable",
-                "Nemotron STT session is not available.",
+                "Qwen3-ASR session is not available.",
             )
             return
 

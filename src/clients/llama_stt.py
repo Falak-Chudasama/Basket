@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import io
+import logging
 import re
+import time
 import wave
 
 import httpx
 from fastapi import HTTPException, UploadFile
 
 from src.core.configs import DEFAULT_STT_MODEL, STT_HOST, STT_PORT
+
+logger = logging.getLogger(__name__)
 
 
 STT_BASE_URL = f"http://{STT_HOST}:{STT_PORT}"
@@ -248,3 +253,119 @@ async def _stream_transcribe_window(
         content_type="audio/wav",
         prompt=prompt,
     )
+
+
+class LlamaRealtimeSession:
+    def __init__(
+        self,
+        *,
+        host: str = STT_HOST,
+        port: int = STT_PORT,
+        sample_rate: int = STREAM_SAMPLE_RATE,
+        language: str = "en",
+        prompt: str | None = None,
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.sample_rate = sample_rate
+        self.language = language
+        self.prompt = prompt
+        self.audio_buffer = bytearray()
+        self.final_transcript = ""
+        self.final_event = asyncio.Event()
+        self.error: str | None = None
+        self.closed = False
+
+    async def connect(self) -> None:
+        if self.closed:
+            raise RuntimeError("Qwen3-ASR session is closed.")
+
+        # Fail START immediately if the llama.cpp ASR server is unavailable.
+        await _health()
+
+        logger.info(
+            "Qwen3-ASR session connected: backend=llama.cpp url=%s:%d "
+            "sample_rate=%d model=%s",
+            self.host,
+            self.port,
+            self.sample_rate,
+            DEFAULT_STT_MODEL,
+        )
+
+    async def send_audio(self, pcm_bytes: bytes) -> None:
+        if not pcm_bytes:
+            return
+        if self.closed:
+            raise RuntimeError("Qwen3-ASR session is closed.")
+        if len(pcm_bytes) % STREAM_SAMPLE_WIDTH != 0:
+            raise ValueError("PCM16 audio has an odd byte length.")
+
+        self.audio_buffer.extend(pcm_bytes)
+
+    async def commit(self) -> None:
+        """Mark the current turn ready for final full-buffer transcription."""
+        return
+
+    async def clear(self) -> None:
+        if self.closed:
+            return
+        self.audio_buffer.clear()
+        self.final_transcript = ""
+        self.error = None
+        self.final_event.clear()
+
+    async def wait_for_final(self, timeout: float = 120.0) -> str:
+        if self.final_transcript:
+            return self.final_transcript
+
+        audio_bytes = bytes(self.audio_buffer)
+        if not audio_bytes:
+            self.final_event.set()
+            return ""
+
+        started_at = time.perf_counter()
+        try:
+            wav_bytes = _pcm16_to_wav(
+                audio_bytes,
+                sample_rate=self.sample_rate,
+            )
+
+            async with httpx.AsyncClient(timeout=_timeout()) as client:
+                result = await asyncio.wait_for(
+                    _transcribe_bytes(
+                        client,
+                        wav_bytes,
+                        filename="voice.wav",
+                        content_type="audio/wav",
+                        prompt=self.prompt,
+                    ),
+                    timeout=timeout,
+                )
+
+            self.final_transcript = str(result.get("text", "") or "").strip()
+            logger.info(
+                "Qwen3-ASR FINAL in %.3fs: bytes=%d transcript=%r",
+                time.perf_counter() - started_at,
+                len(audio_bytes),
+                self.final_transcript,
+            )
+            return self.final_transcript
+
+        except asyncio.TimeoutError as exc:
+            self.error = f"Qwen3-ASR timed out after {timeout:.1f}s."
+            raise HTTPException(status_code=504, detail=self.error) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            self.error = str(exc)
+            logger.exception("Qwen3-ASR final transcription failed")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Qwen3-ASR transcription failed: {exc}",
+            ) from exc
+        finally:
+            self.final_event.set()
+
+    async def close(self) -> None:
+        self.closed = True
+        self.audio_buffer.clear()

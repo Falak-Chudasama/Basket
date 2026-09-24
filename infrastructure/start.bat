@@ -14,12 +14,12 @@ REM      Already running through Windows startup.
 REM
 REM  Services:
 REM
-REM      Basket         → 127.0.0.1:%BASKET_PORT%
-REM      LLM            → 127.0.0.1:%LLM_PORT%
-REM      Nemotron ASR   → 127.0.0.1:%STT_PORT%
-REM      Pocket TTS     → 127.0.0.1:%TTS_PORT%
-REM      SearXNG        → 127.0.0.1:%SEARXNG_PORT%
-REM      MongoDB        → 127.0.0.1:%BASKET_DB_PORT%
+REM      Basket      → 127.0.0.1:%BASKET_PORT%
+REM      LLM         → 127.0.0.1:%LLM_PORT%
+REM      Qwen3-ASR   → 127.0.0.1:%STT_PORT%
+REM      Pocket TTS  → 127.0.0.1:%TTS_PORT%
+REM      SearXNG     → 127.0.0.1:%SEARXNG_PORT%
+REM      MongoDB     → 127.0.0.1:%BASKET_DB_PORT%
 REM
 REM ============================================================
 
@@ -161,18 +161,15 @@ timeout /t 2 /nobreak >nul
 
 
 REM ============================================================
-REM  [4/7] NEMOTRON 3.5 ASR
+REM  [4/7] QWEN3-ASR
 REM
-REM  Backend : NeMo-Speech.cpp
+REM  Backend : llama.cpp
 REM  Device  : CPU ONLY
-REM  Model   : nemotron-3.5
-REM  Port    : 127.0.0.1:%STT_PORT%
 REM ============================================================
 
-echo [4/7] Starting Nemotron 3.5 ASR...
+echo [4/7] Starting Qwen3-ASR...
 echo.
-echo       Backend : NeMo-Speech.cpp
-echo       Model   : %ASR_MODEL_ID%
+echo       Backend : llama.cpp
 echo       Host    : %HOST%
 echo       Port    : %STT_PORT%
 echo       Device  : CPU ONLY
@@ -180,17 +177,12 @@ echo.
 
 
 REM ------------------------------------------------------------
-REM  Verify NeMo-Speech.cpp executable
+REM  Verify ASR model
 REM ------------------------------------------------------------
 
-if not exist "%NEMO_SPEECH_EXE%" (
-    echo ERROR: nemo-speech.exe was not found:
-    echo        %NEMO_SPEECH_EXE%
-    echo.
-    echo       Install NeMo-Speech.cpp first.
-    echo.
-    echo       Expected:
-    echo       %LOCALAPPDATA%\Programs\NeMoSpeech\bin\nemo-speech.exe
+if not exist "%ASR_MODEL%" (
+    echo ERROR: ASR model was not found:
+    echo        %ASR_MODEL%
     echo.
     pause
     exit /b 1
@@ -198,22 +190,46 @@ if not exist "%NEMO_SPEECH_EXE%" (
 
 
 REM ------------------------------------------------------------
-REM  Start Nemotron 3.5 ASR server
-REM
-REM  CPU ONLY:
-REM      --asr.backend.gpu -1
-REM
-REM  Endpointing:
-REM      Finalize an utterance after trailing silence.
-REM
-REM  IMPORTANT:
-REM  Keep this command on ONE LINE because Windows cmd/start
-REM  quoting is sensitive.
+REM  Verify ASR mmproj
 REM ------------------------------------------------------------
 
-start "Basket - STT" cmd /k ""%NEMO_SPEECH_EXE%" serve --asr-model "%ASR_MODEL_ID%" --asr.backend.gpu -1 --host %HOST% --port %STT_PORT%"
+if not exist "%ASR_MMPROJ%" (
+    echo ERROR: ASR mmproj was not found:
+    echo        %ASR_MMPROJ%
+    echo.
+    pause
+    exit /b 1
+)
 
-echo       Nemotron 3.5 ASR server launched.
+
+REM ------------------------------------------------------------
+REM  Verify existing STT llama-server
+REM ------------------------------------------------------------
+
+where llama-server.exe >nul 2>&1
+
+if errorlevel 1 (
+    echo ERROR: llama-server.exe was not found in PATH.
+    echo.
+    echo       Run:
+    echo           where llama-server.exe
+    echo.
+    pause
+    exit /b 1
+)
+
+
+REM ------------------------------------------------------------
+REM  Start Qwen3-ASR
+REM
+REM  CPU ONLY:
+REM      -ngl 0
+REM      --mmproj-device none
+REM ------------------------------------------------------------
+
+start "Basket - STT" cmd /k ""llama-server.exe" -m "%ASR_MODEL%" --mmproj "%ASR_MMPROJ%" --host %HOST% --port %STT_PORT% -ngl 0 --mmproj-device none -c 4096"
+
+echo       Qwen3-ASR server launched.
 echo.
 
 timeout /t 2 /nobreak >nul
