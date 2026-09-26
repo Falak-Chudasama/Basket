@@ -114,7 +114,9 @@ echo       Device   : CUDA
 echo       GPU      : %LLM_GPU_LAYERS% layers
 echo       Context  : %LLM_CTX_SIZE%
 echo       Slots    : %LLM_PARALLEL%
+echo       KV Cache : K=Q8_0 V=Q8_0
 echo       Jinja    : ENABLED
+echo       FlashAttn: AUTO
 echo.
 
 
@@ -150,9 +152,14 @@ REM
 REM  IMPORTANT:
 REM  Keep this command on ONE LINE because Windows cmd/start
 REM  quoting is sensitive.
+REM
+REM  KV CACHE:
+REM      K = Q8_0
+REM      V = Q8_0
+REM
 REM ------------------------------------------------------------
 
-start "Basket - LLM" cmd /k ""%LLAMA_CUDA_EXE%" -m "%LLM_MODEL%" --alias "%LLM_MODEL_ID%" --host %HOST% --port %LLM_PORT% --ctx-size %LLM_CTX_SIZE% --parallel %LLM_PARALLEL% --n-gpu-layers %LLM_GPU_LAYERS% --jinja --flash-attn auto"
+start "Basket - LLM" cmd /k ""%LLAMA_CUDA_EXE%" -m "%LLM_MODEL%" --alias "%LLM_MODEL_ID%" --host %HOST% --port %LLM_PORT% --ctx-size %LLM_CTX_SIZE% --parallel %LLM_PARALLEL% --n-gpu-layers %LLM_GPU_LAYERS% --cache-type-k q8_0 --cache-type-v q8_0 --jinja --flash-attn auto"
 
 echo       llama.cpp LLM server launched.
 echo.
@@ -332,6 +339,14 @@ echo  LLM API:
 echo      Chat        : http://%HOST%:%LLM_PORT%/v1/chat/completions
 echo      Models      : http://%HOST%:%LLM_PORT%/v1/models
 echo      Health      : http://%HOST%:%LLM_PORT%/health
+
+echo.
+echo  LLM Runtime:
+echo      KV Cache    : K=Q8_0 V=Q8_0
+echo      FlashAttn   : AUTO
+echo      GPU Layers  : %LLM_GPU_LAYERS%
+echo      Context     : %LLM_CTX_SIZE%
+echo      Slots       : %LLM_PARALLEL%
 
 echo.
 echo ============================================================

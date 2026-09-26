@@ -816,10 +816,6 @@ async def agent_loop(
     tools = quince_mcp.get_openai_tools(root_result)
 
     for _ in range(MCP_TOOL_CALL_LIMIT):
-        # Reinforce the hard constraint as the LAST message before each
-        # generation - recency matters far more than position-zero framing
-        # for a small model under load, and this is the cheapest lever to
-        # pull without re-sending the whole system prompt every iteration.
         request_messages = agent_messages + [
             Message(role="system", content=AGENT_TOOL_CALL_REMINDER)
         ]
@@ -834,12 +830,6 @@ async def agent_loop(
         )
 
         if not tool_call:
-            # First attempt produced no tool call at all - this is never a
-            # valid outcome in this mode (see AGENT_SYSTEM_PROMPT). Retry
-            # once with a much tighter budget and a stronger repeat penalty
-            # before treating the turn as failed, since most real failures
-            # here are the model drifting into prose or a repetition loop,
-            # not a genuine inability to pick a tool.
             logger.warning("Agent received no tool call on first attempt - retrying once.")
 
             tool_call = await get_llm_response(
@@ -852,14 +842,6 @@ async def agent_loop(
             )
 
         if not tool_call:
-            # Still nothing after the retry. Silently dropping the turn
-            # here would leave the pipeline with no tool call and no
-            # spoken response - from the earlier logs, this is exactly
-            # what let a stray hallucinated response through, or left the
-            # user with dead air. Force a deterministic, code-level
-            # fallback to root.chat instead of trusting the model to
-            # recover: this guarantees the turn always resolves to a real
-            # tool call, even in the worst case.
             logger.error(
                 "Agent received no tool call after retry - forcing root.chat fallback."
             )
@@ -1011,6 +993,12 @@ async def voice_to_voice(
     # --------------------------------------------------------
 
     conversation = await retrieve_context(text=transcript, config=config, messages=messages)
+
+    conversation.append(Message(role="system", content=(
+        "Never invent facts. If you're not certain, or the answer needs live/current "
+        "data, say you don't know or call a tool — never guess or make up numbers, "
+        "names, or details. 'I don't know' is always correct; a confident guess is not."
+    )))
 
     # --------------------------------------------------------
     # AGENTIC LOOP
