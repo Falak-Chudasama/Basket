@@ -7,11 +7,16 @@ class Command:
         self.collection = self.db["commands"]
 
     async def add_one(self, command: str, is_temporary: bool = True):
-        return self.collection.insert_one({
+        result = self.collection.insert_one({
             "command": command,
             "is_temporary": is_temporary,
             "application": self.application
         })
+
+        return {
+            "success": result.acknowledged,
+            "inserted_id": str(result.inserted_id)
+        }
 
     async def add_many(self, commands: list[str]):
         return self.collection.insert_many([

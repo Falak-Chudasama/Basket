@@ -51,7 +51,7 @@ async def get_memory(request: GetMemory):
     )
 
 
-@context_router.get("/memory/get_all")
+@context_router.post("/memory/get_all")
 async def get_all_memory(request: Application):
     if request.application == "quince":
         result = await quince_db_memory.get_all()
@@ -63,10 +63,28 @@ async def get_all_memory(request: Application):
     )
 
 
-@context_router.post("/memory/delete")
+@context_router.delete("/memory/delete")
 async def delete_memory(request: DeleteMemory):
     if request.application == "quince":
         result = await quince_db_memory.delete(request.memory_id)
+
+        if result["deleted_count"] == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Memory '{request.memory_id}' not found.",
+            )
+
+        return {"result": result}
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"{request.application} does not exist.",
+    )
+
+@context_router.post("/memory/delete_all")
+async def delete_all_memory(request: DeleteMemory):
+    if request.application == "quince":
+        result = await quince_db_memory.delete_all()
 
         if result["deleted_count"] == 0:
             raise HTTPException(
@@ -97,8 +115,8 @@ async def add_command(request: AddCommand):
     )
 
 
-@context_router.get("/command/get_all")
-async def get_command(application_request: Application):
+@context_router.post("/command/get_all")
+async def get_all_commands(application_request: Application):
     if application_request.application == "quince":
         result = await quince_commands.get_all()
         return {"result": result}
@@ -121,7 +139,7 @@ async def delete_command(request: DeleteCommand):
     )
 
 
-@context_router.delete("/command/delete_all")
+@context_router.post("/command/delete_all")
 async def delete_all_commands(request: Application):
     if request.application == "quince":
         result = await quince_commands.delete_all()

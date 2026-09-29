@@ -412,7 +412,7 @@ async def stt_stream(websocket: WebSocket) -> None:
 
     logger.info("VOICE WS CONNECTED: client=%s", websocket.client)
 
-    clear_session()
+    await clear_session()
     create_session(session.application)
 
     try:

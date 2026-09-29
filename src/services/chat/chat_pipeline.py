@@ -568,7 +568,7 @@ async def retrieve_context(
 
     user_prompts = []
     assistant_responses = []
-    commands = list(_get_commands(application=config.application).get_all())
+    commands = list(await _get_commands(application=config.application).get_all())
 
     for candidate in candidates:
         if candidate["metadata"]["source"] == "user":
