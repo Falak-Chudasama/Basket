@@ -23,6 +23,9 @@ LLM_DEFAULT_CONTEXT_LENGTH = 12000
 LLM_DEFAULT_ID = "quince-llm"
 LLM_ROOT_SYSTEM_PROMPT = ""
 
+GROQ_API_KEY=os.getenv("GROQ_API_KEY", "NONE")
+GROQ_LLM_MODEL=os.getenv("GROQ_LLM_MODEL", "qwen/qwen3.8-27b")
+
 STT_HOST = os.getenv("STT_HOST", "127.0.0.1")
 STT_PORT = int(os.getenv("STT_PORT", "7002"))
 # Smaller Model: "Qwen3-ASR-0.6B-Q8_0"

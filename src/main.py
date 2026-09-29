@@ -25,7 +25,7 @@ app.include_router(ttsRouter)
 app.include_router(context_router)
 app.include_router(wsRouter)
 
-
+# TODO: Remove this and keep "Serving Fruits!"
 from src.clients.quince_mcp import quince_mcp
 
 @app.get("/")

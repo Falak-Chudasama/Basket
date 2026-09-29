@@ -1,7 +1,23 @@
+from groq import Groq
+# completion = client.chat.completions.create(
+#     model="qwen/qwen3.8-27b",
+#     messages=[
+#       {
+#         "role": "user",
+#         "content": ""
+#       }
+#     ],
+#     temperature=0.6,
+#     max_completion_tokens=2048,
+#     top_p=0.95,
+#     reasoning_effort="default",
+#     stream=True,
+#     stop=None
+# )
+
 import httpx
 import json
 import logging
-from openai import OpenAI
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -9,7 +25,8 @@ from src.core.configs import (
     LLM_HOST,
     LLM_PORT,
     LLM_DEFAULT_ID,
-    LLM_ROOT_SYSTEM_PROMPT
+    LLM_ROOT_SYSTEM_PROMPT,
+    GROQ_API_KEY
 )
 from src.schemas.ChatSchema import ChatRequest
 
@@ -19,37 +36,9 @@ BASE_LLAMA_URL = f"http://{LLM_HOST}:{LLM_PORT}/v1"
 CHAT_COMPLETION_URL = f"{BASE_LLAMA_URL}/chat/completions"
 MODELS_URL = f"{BASE_LLAMA_URL}/models"
 
-client = OpenAI(
-    base_url=BASE_LLAMA_URL,
-    api_key="sk-no-key-required"
-)
+client = Groq(api_key=GROQ_API_KEY)
 
 async def _ensure_model_loaded(model_id: str = LLM_DEFAULT_ID) -> bool:
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as http_client:
-            response = await http_client.get(MODELS_URL)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Unable to connect to llama.cpp.")
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="llama.cpp model request timed out.")
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"llama.cpp HTTP error: {exc}")
-
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=response.text
-        )
-
-    data = response.json()
-    models = data.get("data", [])
-
-    if not any(isinstance(model, dict) and model.get("id") == model_id for model in models):
-        raise HTTPException(
-            status_code=503,
-            detail=f"Model '{model_id}' is not available in llama.cpp."
-        )
-
     return True
 
 def _build_message(request: ChatRequest):
@@ -97,9 +86,7 @@ def _build_request(request: ChatRequest, stream: bool):
         "model": request.model or LLM_DEFAULT_ID,
         "messages": _build_message(request),
         "stream": stream,
-        "chat_template_kwargs": {
-            "enable_thinking": False
-        },
+        "reasoning_effort": "none" if not request.thinking else "default"
     }
 
     if request.tools is not None:
@@ -334,39 +321,25 @@ async def _chat(request: ChatRequest):
     return await _chat_completion_non_streaming(request)
 
 async def _get_models():
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as http_client:
-            response = await http_client.get(MODELS_URL)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Unable to connect to llama.cpp.")
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="llama.cpp model request timed out.")
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"llama.cpp HTTP error: {exc}")
-
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=response.text
-        )
-
-    return response.json()
+    raise HTTPException(
+        status_code=501,
+        detail="Model listing is not supported through the Groq REST API."
+    )
 
 async def _load_model(model_id: str = LLM_DEFAULT_ID):
-    await _ensure_model_loaded(model_id)
-    return {
-        "status": "already_loaded",
-        "model": model_id
-    }
+    raise HTTPException(
+        status_code=501,
+        detail="Model loading is not supported through the Groq REST API."
+    )
 
 async def _unload_model(instance_id: str):
     raise HTTPException(
         status_code=501,
-        detail="Model unloading is not supported through the llama.cpp REST API."
+        detail="Model unloading is not supported through the Groq REST API."
     )
 
 async def _unload_all_models():
     raise HTTPException(
         status_code=501,
-        detail="Model unloading is not supported through the llama.cpp REST API."
+        detail="Model unloading is not supported through the Groq REST API."
     )

@@ -6,15 +6,15 @@ class Command:
         self.application = application
         self.collection = self.db["commands"]
 
-    def add_one(self, command: str, is_temporary: bool = True):
-        self.collection.insert_one({
+    async def add_one(self, command: str, is_temporary: bool = True):
+        return self.collection.insert_one({
             "command": command,
             "is_temporary": is_temporary,
             "application": self.application
         })
 
-    def add_many(self, commands: list[str]):
-        self.collection.insert_many([
+    async def add_many(self, commands: list[str]):
+        return self.collection.insert_many([
             {
                 "command": command,
                 "application": self.application,
@@ -22,20 +22,28 @@ class Command:
             for command in commands
         ])
 
-    def get_all(self):
-        return self.collection.find({ "application": self.application })
+    async def get_all(self):
+        documents = list(self.collection.find({}))
+        for document in documents:
+            document["_id"] = str(document["_id"])
+        return documents
 
-    def delete(self, command: str):
-        self.collection.delete_one({
+    async def delete(self, command_id: str):
+        result = self.collection.delete_one({
             "application": self.application,
-            "command": command
+            "_id": command_id
         })
+        return result.deleted_count
 
-    def delete_all_temp(self):
-        self.collection.delete_many({
+    async def delete_all_temp(self):
+        result = self.collection.delete_many({
             "application": self.application,
             "is_temporary": True
         })
+        return result.deleted_count
 
-    def delete_all(self):
-        self.collection.delete_many({ "application": self.application })
+    async def delete_all(self):
+        result = self.collection.delete_many({
+            "application": self.application
+        })
+        return result.deleted_count

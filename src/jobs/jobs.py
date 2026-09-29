@@ -3,4 +3,4 @@ from src.jobs.refresh_session_job import clear_session
 
 async def run_jobs():
     await load_models()
-    clear_session()
+    await clear_session()
