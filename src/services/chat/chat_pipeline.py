@@ -30,6 +30,8 @@ from src.clients.quince_mcp import quince_mcp
 
 logger = logging.getLogger(__name__)
 
+# TODO: Decompose this spaghetti code
+# TODO: Sanitize system prompts and send only right messages when tool calling
 
 REALTIME_TTS_SAMPLE_RATE = 24_000
 REALTIME_TTS_CHANNELS = 1
@@ -851,9 +853,9 @@ async def agent_loop(
         arguments_str = tool_call.get("arguments", "{}")
         call_id = tool_call.get("id")
 
-        print("\n\n")
-        print(f"Tool Call: %s", tool_id)
-        print("\n\n")
+        # print("\n\n") # DECOMMENT
+        # print(f"Tool Call: %s", tool_id) # DECOMMENT
+        # print("\n\n") # DECOMMENT
 
         logger.info("Tool Call: %s", tool_id)
 

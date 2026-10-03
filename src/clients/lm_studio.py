@@ -408,7 +408,7 @@ async def streaming_completion(request: ChatRequest):
                     yield text
 
         except httpx.HTTPError as exc:
-            print(f"[Basket][LLM][STREAM ERROR] {exc}")
+            raise exc
 
         finally:
             await response.aclose()

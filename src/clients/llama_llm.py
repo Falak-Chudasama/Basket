@@ -4,6 +4,7 @@ import logging
 from openai import OpenAI
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+from typing import Any
 
 from src.core.configs import (
     LLM_HOST,
@@ -92,6 +93,10 @@ def _build_message(request: ChatRequest):
 
     return final_messages
 
+def _get_tool_call_grammer(tools: list[dict[str, Any]]):
+    root = 'root ::= "<tool_call>\n" tool "</tool_call>\n"'
+
+
 def _build_request(request: ChatRequest, stream: bool):
     payload = {
         "model": request.model or LLM_DEFAULT_ID,
@@ -102,6 +107,8 @@ def _build_request(request: ChatRequest, stream: bool):
         },
     }
 
+    if request.abstract_tool_use:
+        payload["grammer"] = _get_tool_call_grammer(request.tools)
     if request.tools is not None:
         payload["tools"] = request.tools
         payload["parallel_tool_calls"] = False
@@ -119,6 +126,10 @@ def _build_request(request: ChatRequest, stream: bool):
         payload["stop"] = request.stop
     if request.seed is not None:
         payload["seed"] = request.seed
+
+    print("\n\n")
+    print(request.tools)
+    print("\n\n")
 
     return payload
 
