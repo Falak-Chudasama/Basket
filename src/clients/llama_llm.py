@@ -1,10 +1,12 @@
 import httpx
 import json
 import logging
+import re
+import uuid
 from openai import OpenAI
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from typing import Any
+from typing import Any, Optional
 
 from src.core.configs import (
     LLM_HOST,
@@ -53,6 +55,201 @@ async def _ensure_model_loaded(model_id: str = LLM_DEFAULT_ID) -> bool:
 
     return True
 
+def _gbnf_literal(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+def _enum_text(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+_BASE_RULES = (
+    'boolean ::= "true" | "false"',
+    'integer ::= "-"? [0-9]+',
+    'number ::= "-"? [0-9]+ ("." [0-9]+)?',
+    'string ::= [^<\\x00-\\x1F]+',
+)
+
+_PRIMITIVE_TYPES = {"string", "boolean", "integer", "number"}
+
+_OPEN_CALL = _gbnf_literal("<tool_call>\n")
+_CLOSE_CALL = _gbnf_literal("</tool_call>\n")
+_CLOSE_FUNCTION = _gbnf_literal("</function>\n")
+_CLOSE_PARAMETER = _gbnf_literal("\n</parameter>\n")
+
+def _get_tool_call_grammar(tools: list[dict[str, Any]]) -> str:
+    if not tools:
+        raise ValueError("Cannot build a tool-call grammar without tools.")
+
+    tool_refs: list[str] = []
+    tool_rules: list[str] = []
+    enum_rules: list[str] = []
+
+    for i, tool in enumerate(tools):
+        function = tool["function"]
+        tool_name = function["name"]
+
+        rule_name = f"tool-{i}"
+        tool_refs.append(rule_name)
+
+        params = function.get("parameters") or {}
+        properties = params.get("properties") or {}
+        required = set(params.get("required") or [])
+
+        parts = [_gbnf_literal(f"<function={tool_name}>\n")]
+
+        for j, (prop_name, schema) in enumerate(properties.items()):
+            schema = schema or {}
+            enum = schema.get("enum")
+
+            if enum:
+                value_ref = f"tool-{i}-arg-{j}"
+                choices = " | ".join(
+                    _gbnf_literal(_enum_text(v)) for v in dict.fromkeys(enum)
+                )
+                enum_rules.append(f"{value_ref} ::= {choices}")
+            else:
+                schema_type = schema.get("type")
+                if isinstance(schema_type, list):
+                    schema_type = next((t for t in schema_type if t != "null"), None)
+                if schema_type not in _PRIMITIVE_TYPES:
+                    raise ValueError(
+                        f"Unsupported type {schema_type!r} for parameter "
+                        f"'{prop_name}' of tool '{tool_name}'."
+                    )
+                value_ref = schema_type
+
+            parameter = " ".join(
+                [
+                    _gbnf_literal(f"<parameter={prop_name}>\n"),
+                    value_ref,
+                    _CLOSE_PARAMETER,
+                ]
+            )
+            parts.append(parameter if prop_name in required else f"({parameter})?")
+
+        parts.append(_CLOSE_FUNCTION)
+        tool_rules.append(f"{rule_name} ::= " + " ".join(parts))
+
+    grammar = [
+        f"root ::= {_OPEN_CALL} tool {_CLOSE_CALL}",
+        f"tool ::= {' | '.join(tool_refs)}",
+        *tool_rules,
+        *enum_rules,
+        *_BASE_RULES,
+    ]
+
+    return "\n".join(grammar) + "\n"
+
+_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*<function=([^>\n]+)>\n(.*?)</function>\s*</tool_call>",
+    re.DOTALL,
+)
+_PARAM_RE = re.compile(r"<parameter=([^>\n]+)>\n(.*?)\n</parameter>", re.DOTALL)
+
+def _parse_grammar_tool_call(
+    text: Optional[str],
+    tools: list[dict[str, Any]]
+) -> Optional[dict]:
+    match = _TOOL_CALL_RE.search(text or "")
+
+    if not match:
+        return None
+
+    name, body = match.group(1), match.group(2)
+
+    schema = next(
+        (
+            (tool["function"].get("parameters") or {})
+            for tool in tools
+            if tool["function"]["name"] == name
+        ),
+        {},
+    )
+    properties = schema.get("properties") or {}
+
+    arguments: dict[str, Any] = {}
+
+    for prop_name, raw in _PARAM_RE.findall(body):
+        prop_type = (properties.get(prop_name) or {}).get("type")
+
+        if prop_type == "integer":
+            arguments[prop_name] = int(raw)
+        elif prop_type == "number":
+            arguments[prop_name] = float(raw)
+        elif prop_type == "boolean":
+            arguments[prop_name] = raw == "true"
+        else:
+            arguments[prop_name] = raw
+
+    return {
+        "id": f"call_{uuid.uuid4().hex[:12]}",
+        "name": name,
+        "arguments": json.dumps(arguments),
+    }
+
+def _get_tool_list_message(tools: list[dict[str, Any]]) -> str:
+    lines = [
+        "AVAILABLE TOOLS:",
+        "",
+        "Choose exactly one tool when a tool is required.",
+        "Only use tools listed below. Never invent tool names or arguments.",
+        "",
+        "OUTPUT FORMAT (exactly):",
+        "<tool_call>",
+        "<function=TOOL_NAME>",
+        "<parameter=ARG_NAME>",
+        "VALUE",
+        "</parameter>",
+        "</function>",
+        "</tool_call>",
+        ""
+    ]
+
+    for tool in tools:
+        function = tool["function"]
+        name = function["name"]
+        description = function.get("description", "").strip()
+
+        lines.append(f"TOOL: {name}")
+
+        if description:
+            lines.append(f"DESCRIPTION: {description}")
+
+        params = function.get("parameters") or {}
+        properties = params.get("properties", {})
+        required = set(params.get("required", []))
+
+        if properties:
+            lines.append("ARGUMENTS:")
+            for prop_name, schema in properties.items():
+                prop_type = schema.get("type", "any")
+                prop_desc = schema.get("description", "").strip()
+                enum = schema.get("enum")
+
+                required_text = "required" if prop_name in required else "optional"
+
+                lines.append(f"- {prop_name} ({prop_type}, {required_text})")
+
+                if enum:
+                    lines.append(f"  allowed values: {', '.join(map(str, enum))}")
+                if prop_desc:
+                    lines.append(f"  description: {prop_desc}")
+
+        else:
+            lines.append("ARGUMENTS: none")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
 def _build_message(request: ChatRequest):
     system_parts: list[str] = []
     conversation_messages: list[dict] = []
@@ -62,6 +259,12 @@ def _build_message(request: ChatRequest):
 
     if request.system_prompt:
         system_parts.append(request.system_prompt)
+
+    if request.tools:
+        tool_message = _get_tool_list_message(request.tools)
+        system_parts.append(
+            f"Available Tools:\n{tool_message}"
+        )
 
     for message in request.messages:
         if message.role == "system":
@@ -93,10 +296,6 @@ def _build_message(request: ChatRequest):
 
     return final_messages
 
-def _get_tool_call_grammer(tools: list[dict[str, Any]]):
-    root = 'root ::= "<tool_call>\n" tool "</tool_call>\n"'
-
-
 def _build_request(request: ChatRequest, stream: bool):
     payload = {
         "model": request.model or LLM_DEFAULT_ID,
@@ -107,29 +306,38 @@ def _build_request(request: ChatRequest, stream: bool):
         },
     }
 
-    if request.abstract_tool_use:
-        payload["grammer"] = _get_tool_call_grammer(request.tools)
-    if request.tools is not None:
-        payload["tools"] = request.tools
-        payload["parallel_tool_calls"] = False
-    if request.tool_choice is not None:
-        payload["tool_choice"] = request.tool_choice
-    if request.temperature is not None:
-        payload["temperature"] = request.temperature
+    force_tool_call = bool(request.tools) and (
+        request.is_tool_call_request or request.tool_choice == "required"
+    )
+
+    if force_tool_call:
+        try:
+            payload["grammar"] = _get_tool_call_grammar(request.tools)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+        logger.debug("Tool-call grammar:\n%s", payload["grammar"])
+
+        payload["temperature"] = 0
+        payload["repeat_penalty"] = 1.0
+    else:
+        if request.tools is not None:
+            payload["parallel_tool_calls"] = False
+        if request.tool_choice is not None:
+            payload["tool_choice"] = request.tool_choice
+        if request.temperature is not None:
+            payload["temperature"] = request.temperature
+        if request.repeat_penalty is not None:
+            payload["repeat_penalty"] = request.repeat_penalty
+
     if request.top_p is not None:
         payload["top_p"] = request.top_p
     if request.max_tokens is not None:
         payload["max_tokens"] = request.max_tokens
-    if request.repeat_penalty is not None:
-        payload["repeat_penalty"] = request.repeat_penalty
     if request.stop is not None:
         payload["stop"] = request.stop
     if request.seed is not None:
         payload["seed"] = request.seed
-
-    print("\n\n")
-    print(request.tools)
-    print("\n\n")
 
     return payload
 
@@ -220,11 +428,16 @@ async def _chat_completion_non_streaming(request: ChatRequest):
             return None
 
         message = choices[0].get("message", {})
+        content = message.get("content")
         tool_calls = message.get("tool_calls") or []
 
         if not tool_calls:
+            parsed = _parse_grammar_tool_call(content, request.tools or [])
+
+            if parsed:
+                return parsed
+
             finish_reason = choices[0].get("finish_reason")
-            content = message.get("content")
 
             if finish_reason == "length":
                 logger.error(

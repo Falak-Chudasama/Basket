@@ -23,3 +23,4 @@ class ChatRequest(BaseModel):
     thinking: bool = False
     tools: list[dict[str, Any]] = []
     tool_choice: Literal["required", "auto", "none"] = "none"
+    is_tool_call_request: bool = True if len(tools) > 0 else False
