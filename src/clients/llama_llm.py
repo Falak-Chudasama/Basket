@@ -217,11 +217,14 @@ def _get_tool_list_message(tools: list[dict[str, Any]]) -> str:
         function = tool["function"]
         name = function["name"]
         description = function.get("description", "").strip()
+        prereq_results = function.get("prereq_results")
 
         lines.append(f"TOOL: {name}")
 
         if description:
             lines.append(f"DESCRIPTION: {description}")
+        if prereq_results:
+            lines.append(f"PREREQUISITE RESULTS (for your reference): {prereq_results}")
 
         params = function.get("parameters") or {}
         properties = params.get("properties", {})
