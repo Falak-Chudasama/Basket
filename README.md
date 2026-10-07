@@ -412,7 +412,3 @@ Windows capabilities
 Quince owns the user-facing client and machine capabilities. Basket owns the reasoning pipeline, retrieval, memory, model communication, and agent orchestration.
 
 Keeping those concerns separate makes it possible to change the model stack or retrieval system without moving operating-system logic into the backend, and to expand Quince's capabilities without putting Windows-specific code into Basket.
-
-## License
-
-Not yet specified.
