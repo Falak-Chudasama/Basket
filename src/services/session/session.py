@@ -30,6 +30,9 @@ def append_chat_to_memory(application: str | None = "quince", content: str = "",
 
     chats = _get_db_chats(application=application)
     session_id = _get_active_session_id(application=application)
+    if not session_id:
+        create_session(application=application)
+        session_id = _get_active_session_id(application=application)
 
     message_id = chats.update_chat(
         session_id=session_id,

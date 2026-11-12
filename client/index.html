@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/icons/basket-icon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Basket</title>
+  <!-- Zero-flash theme initialization script -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('basket_theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (!saved && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      } catch (e) { }
+    })();
+  </script>
+</head>
+
+<body
+  class="bg-[#F8F9F5] text-stone-900 dark:bg-[#121310] dark:text-stone-50 min-h-screen antialiased selection:bg-basket-200 selection:text-stone-900">
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

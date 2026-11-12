@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -5,42 +6,50 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Node / Web Frontend
+node_modules/
+*/node_modules/
+client/dist/
+dist/
+
+# Virtual Environments
 .venv/
 venv/
 env/
 
+# Environment and Secrets
 .env
+.env.local
 .env.*
 !.env.example
 
+# Process Manager Runtime & State Files
+infrastructure/logs/*.log
+!infrastructure/logs/.gitkeep
+infrastructure/run/*.pid
+infrastructure/run/*.json
+!infrastructure/run/.gitkeep
 logs/*
 !logs/.gitkeep
+*.pid
 
-config/local.yaml
-config/local.yml
-
-models/*
-!models/.gitkeep
-
-# Fruit projects — ignore everything inside
-/fruits/*
-/kiwi/*
-/lychee/*
-/plum/*
-/quince/*
-
-# Keep directory placeholders
-!/fruits/.gitkeep
-!/kiwi/.gitkeep
-!/lychee/.gitkeep
-!/plum/.gitkeep
-!/quince/.gitkeep
-
-.vscode/
-.idea/
-
+# Local Databases and Vector Stores
 /chromadb/*
 /vectordb/*
 
+# Backups & Temp files
+*.bak
+*.tmp
+*.log
+
+# IDE & OS State
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
+
+# Android Build Artifacts (Lemon)
+*.apk
+*.aab
+.gradle/
+build/

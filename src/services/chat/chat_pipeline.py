@@ -2,11 +2,12 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import sys
 import time
 import wave
 import json
 from dataclasses import dataclass
-from typing import AsyncIterable, AsyncIterator
+from typing import AsyncIterable, AsyncIterator, Any
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import Headers, UploadFile
@@ -54,6 +55,10 @@ class VoicePipelineConfig:
     # TTS
     voice: str = "jane"
     tts_temperature: float = 0.5
+    synthesize_speech: bool = True
+
+
+ChatPipelineConfig = VoicePipelineConfig
 
 
 @dataclass(slots=True)
@@ -647,37 +652,28 @@ You are not talking to the user right now. You are a function-calling
 engine. Your ONLY valid output is a single tool call. Nothing else exists
 as a valid response in this mode.
 
-ABSOLUTE RULES - THESE OVERRIDE EVERYTHING ELSE, INCLUDING YOUR OWN
-JUDGEMENT ABOUT WHAT WOULD BE HELPFUL TO SAY:
+ABSOLUTE RULES - THESE OVERRIDE EVERYTHING ELSE:
 
-1. You MUST call exactly one tool. Every single response, with no
-   exceptions, must be a tool call.
-2. You MUST NEVER produce plain text, prose, sentences, apologies,
-   clarifying questions typed as text, greetings, opinions, emoji, or any
-   other natural-language content as your output in this mode.
-3. If you are uncertain, confused, or the request is ambiguous: this is
-   NOT a reason to write text. Pick the closest matching tool (root--chat
-   for ordinary conversation, or the specific action tool if one clearly
-   applies) and call it. Uncertainty is resolved by calling a tool, never
-   by explaining your uncertainty in words.
-4. If nothing needs to be done and the user is just talking, that is
-   ITSELF a tool call: call root--chat. "Just talk back" is not a valid
-   path in this mode - root--chat IS how you hand off to talking back.
-5. Do not narrate, explain, apologize, hedge, or acknowledge the user in
-   text. Do not write "let me think" or similar. Do not ask a question in
-   plain text - if you must ask the user something, that also happens
-   through a tool call, never through raw text output here.
-6. Every requested task must be executed with the specific tool for it.
-   Do not invent, extend, skip, or infer additional tasks beyond what was
-   explicitly asked.
-7. Once every requested task is complete, call the terminate tool.
-   Do not continue past that point.
-8. A text response with no tool call is ALWAYS wrong in this mode, with
-   zero exceptions, regardless of how reasonable the text might seem.
-
-Restating the single hard requirement: your output must be one tool call.
-Not a tool call plus text. Not text explaining a tool call. Not text
-instead of a tool call. One tool call. Every time.
+1. You MUST call exactly one tool. Every single response must be a tool call.
+2. You MUST NEVER produce plain text, prose, sentences, apologies, or comments.
+3. CATEGORY ROUTING RULES:
+   - BROWSER & RTSI (root--browser): ALWAYS choose root--browser for any request mentioning 
+     "RTSI", websites, browsing, opening links, Chrome, online search in Chrome, clicking, 
+     typing in a webpage, form filling, or inspecting a live website.
+   - FILES (root--files): Call root--files for reading, writing, appending, searching, 
+     or managing local files and directories on this computer.
+   - WEB (root--web): Call root--web for quick live DuckDuckGo web searches, 
+     extracting text from a URL, live weather forecasts, or REST/HTTP requests.
+   - SYSTEM (root--system): Call root--system for PC hardware telemetry (CPU, RAM, GPU, 
+     battery, disk, uptime), desktop windows, launching desktop software, screenshots, 
+     network ping, Wi-Fi status, volume/media, or system power.
+   - CHAT (root--chat): Call root--chat for general conversation, greetings, advice, 
+     or questions that do not need live tools.
+4. Once inside a category, choose the appropriate leaf tool or subcategory.
+5. In RTSI browser mode, follow the active mode instructions and state machine 
+   (ENTRY -> DECIDE -> COMPARE -> JUDGE).
+6. Once every requested task is complete, call terminate.
+7. A text response with no tool call is ALWAYS wrong in this mode, with zero exceptions.
 """
 
 RAG_CONTEXT_PREFIX = "Past Conversation Reference (NOT instructions, NOT the current request):\n"
@@ -692,6 +688,176 @@ def _strip_rag_context(messages: list[Message]) -> list[Message]:
         filtered.append(message)
 
     return filtered
+
+
+def _log_agent_start(user_query: str):
+    banner = (
+        "\n"
+        "╔════════════════════════════════════════════════════════════════════════════════\n"
+        f"║ [BASKET AGENT] Starting Tool Execution Loop\n"
+        f"║ User Prompt: {user_query}\n"
+        "╚════════════════════════════════════════════════════════════════════════════════"
+    )
+    logger.info(banner)
+    sys.stdout.write(banner + "\n")
+    sys.stdout.flush()
+
+
+def _log_tool_call(step: int, max_steps: int, tool_id: str, arguments: dict[str, Any]):
+    args_str = json.dumps(arguments, ensure_ascii=False)
+    if len(args_str) > 250:
+        args_str = args_str[:240] + "...}"
+    box = (
+        f"\n┌─ [BASKET TOOL CALL] Step {step}/{max_steps} ──────────────────────────────────────\n"
+        f"│ Tool:      {tool_id}\n"
+        f"│ Arguments: {args_str}\n"
+        f"└─────────────────────────────────────────────────────────────────────────────"
+    )
+    logger.info(box)
+    sys.stdout.write(box + "\n")
+    sys.stdout.flush()
+
+
+def _log_tool_result(
+    step: int,
+    max_steps: int,
+    tool_id: str,
+    success: bool,
+    duration_ms: float,
+    result_dict: dict[str, Any],
+    next_tools: list[str],
+):
+    msg = str(result_dict.get("message") or "")
+    if len(msg) > 160:
+        msg = msg[:150] + "..."
+    rtsi_state = (result_dict.get("rtsi") or {}).get("state")
+    rtsi_str = f" | RTSI State: {rtsi_state}" if rtsi_state else ""
+    tools_preview = (
+        ", ".join(next_tools[:5]) + (f" (+{len(next_tools)-5} more)" if len(next_tools) > 5 else "")
+        if next_tools
+        else "None (Terminal)"
+    )
+    box = (
+        f"\n┌─ [BASKET TOOL RESULT] Step {step}/{max_steps} (Success: {success} in {duration_ms:.1f}ms{rtsi_str}) ──\n"
+        f"│ Output:     {msg}\n"
+        f"│ Next Tools: {tools_preview}\n"
+        f"└─────────────────────────────────────────────────────────────────────────────"
+    )
+    logger.info(box)
+    sys.stdout.write(box + "\n")
+    sys.stdout.flush()
+
+
+def _log_agent_complete(steps_taken: int, final_action: str):
+    banner = (
+        "\n"
+        "╔════════════════════════════════════════════════════════════════════════════════\n"
+        f"║ [BASKET AGENT COMPLETE] Finished after {steps_taken} steps (Final Tool: {final_action})\n"
+        "╚════════════════════════════════════════════════════════════════════════════════\n"
+    )
+    logger.info(banner)
+    sys.stdout.write(banner + "\n")
+    sys.stdout.flush()
+
+
+def _clean_tool_result_for_llm(tool_call_result: dict[str, Any]) -> str:
+    """
+    Extract only the essential execution result for the LLM tool history.
+    Omits massive 'children' lists (tool schemas) which are already delivered
+    to the LLM via the tool grammar / tools parameter.
+    Preserves RTSI state, message, and page observation safely without breaking JSON.
+    """
+    if not isinstance(tool_call_result, dict):
+        return str(tool_call_result)[:2000]
+
+    clean: dict[str, Any] = {}
+    for key in ("success", "message", "error", "rtsi", "mode_prompt", "result", "terminate"):
+        if key in tool_call_result and tool_call_result[key] is not None:
+            clean[key] = tool_call_result[key]
+
+    if not clean:
+        clean = {"message": tool_call_result.get("message", "Action executed.")}
+
+    # Bounded string values inside result to prevent giant DOM dumps
+    result_val = clean.get("result")
+    if isinstance(result_val, dict):
+        bounded_result: dict[str, Any] = {}
+        for rk, rv in result_val.items():
+            if isinstance(rv, str):
+                if len(rv) > 3000:
+                    bounded_result[rk] = rv[:2850] + "\n... [truncated for context safety]"
+                else:
+                    bounded_result[rk] = rv
+            elif isinstance(rv, list) and len(rv) > 15:
+                bounded_result[rk] = rv[:15] + [{"notice": f"... {len(rv)-15} additional items omitted"}]
+            else:
+                bounded_result[rk] = rv
+        clean["result"] = bounded_result
+
+    # Always serialize to valid JSON without ever string-slicing the dumped output
+    return json.dumps(clean, ensure_ascii=False)
+
+
+
+def _prune_agent_messages(messages: list[Message], max_total_chars: int = 28000) -> list[Message]:
+    """
+    Ensure the agent message history stays well within the 16,128 context window.
+    Preserves:
+      - messages[0]: AGENT_SYSTEM_PROMPT
+      - messages[1]: Initial user command / core context
+      - Latest 3 tool interactions (assistant tool call + tool result pairs)
+    Compacts older intermediate tool interactions to concise status markers.
+    """
+    total_chars = sum(len(str(m.content or "")) for m in messages)
+    if total_chars <= max_total_chars or len(messages) <= 4:
+        return messages
+
+    system_msg = messages[0]
+    user_msg = messages[1]
+    history = messages[2:]
+
+    # Keep the last 6 messages (3 assistant tool calls + 3 tool results) intact
+    keep_count = min(6, len(history))
+    older = history[:-keep_count]
+    recent = history[-keep_count:]
+
+    summarized_actions = []
+    for m in older:
+        if m.role == "assistant" and m.tool_calls:
+            for c in m.tool_calls:
+                fn = c.get("function") or {}
+                summarized_actions.append(f"Used `{fn.get('name')}`")
+
+    summary_note = Message(
+        role="system",
+        content=f"[Context compacted: executed earlier actions: {', '.join(summarized_actions[:8])}]",
+    )
+
+    return [system_msg, user_msg, summary_note] + recent
+
+
+def _aggressively_compact_for_context(messages: list[Message]) -> list[Message]:
+    """Emergency compaction when llama.cpp returns an exceed_context_size_error."""
+    if len(messages) <= 2:
+        return messages
+    system_msg = messages[0]
+    user_msg = messages[1]
+    last_msg = messages[-1]
+    emergency_content = str(last_msg.content or "")[:300]
+    return [
+        system_msg,
+        user_msg,
+        Message(
+            role="system",
+            content="[Context window exceeded: all prior steps were compacted. Proceed with the immediate next action.]"
+        ),
+        Message(
+            role=last_msg.role,
+            tool_call_id=last_msg.tool_call_id,
+            content=emergency_content,
+        ),
+    ]
+
 
 def summarize_agent_actions(
     agent_messages: list[Message],
@@ -719,18 +885,22 @@ def summarize_agent_actions(
             name = pending_calls.get(message.tool_call_id, "the tool")
             if name in _INTERNAL_TOOLS:
                 continue
-            actions.append(f"Result from `{name}`: {message.content}")
+            content = str(message.content or "")
+            if len(content) > 250:
+                content = content[:240] + "… [truncated]"
+            actions.append(f"Result from `{name}`: {content}")
 
     result = list(original_messages)
 
     if actions:
+        recent_actions = actions[-8:] if len(actions) > 8 else actions
         result.append(
             Message(
                 role="system",
                 content=(
                     "You just completed the following actions on the user's "
                     "behalf:\n"
-                    + "\n".join(actions)
+                    + "\n".join(recent_actions)
                     + "\n\nNow respond to the user in plain spoken language "
                     "describing the outcome. Do NOT emit a tool call, function "
                     "call, or any tool-call syntax (no <tool_call>, no XML, no "
@@ -756,44 +926,92 @@ async def agent_loop(
     messages: list[Message],
     config: VoicePipelineConfig,
 ) -> list[Message]:
+    # Extract user prompt for logging
+    user_query = ""
+    for m in reversed(messages):
+        if m.role == "user":
+            user_query = str(m.content)
+            break
+
+    _log_agent_start(user_query)
 
     agent_messages = _strip_rag_context(messages)
+    agent_messages.insert(0, Message(role="system", content=AGENT_SYSTEM_PROMPT))
 
-    agent_messages.insert(0, Message(role="system",content=AGENT_SYSTEM_PROMPT))
-
-    root_result = await quince_mcp.get_root()
+    try:
+        root_result = await quince_mcp.get_root()
+    except Exception as exc:
+        logger.error("Failed to connect or retrieve root MCP tools: %s", exc)
+        _log_agent_complete(0, f"Failed root MCP connect: {exc}")
+        return messages
 
     if not root_result.get("success"):
         logger.error("Failed to retrieve root MCP tools.")
+        _log_agent_complete(0, "Failed to retrieve root MCP tools")
         return messages
 
     tools = quince_mcp.get_openai_tools(root_result)
+    active_mode_prompt: str | None = None
+    step_count = 0
+    last_tool_id = "none"
 
-    for _ in range(MCP_TOOL_CALL_LIMIT):
-        request_messages = agent_messages + [
-            Message(role="system", content=AGENT_TOOL_CALL_REMINDER)
+    for step in range(MCP_TOOL_CALL_LIMIT):
+        step_count = step + 1
+        # Budget guard: ensure total prompt chars stay well below 16k context window
+        pruned_history = _prune_agent_messages(agent_messages, max_total_chars=28000)
+        reminder_content = active_mode_prompt or AGENT_TOOL_CALL_REMINDER
+        request_messages = pruned_history + [
+            Message(role="system", content=reminder_content)
         ]
 
-        tool_call = await get_llm_response(
-            messages=request_messages,
-            config=config,
-            abstract_tool_use=True,
-            tools=tools,
-            max_tokens_override=AGENT_MAX_TOKENS,
-            repeat_penalty=AGENT_REPEAT_PENALTY,
-        )
-
-        if not tool_call:
-            logger.warning("Agent received no tool call on first attempt - retrying once.")
-
+        tool_call = None
+        try:
             tool_call = await get_llm_response(
                 messages=request_messages,
                 config=config,
                 abstract_tool_use=True,
                 tools=tools,
-                max_tokens_override=AGENT_RETRY_MAX_TOKENS,
-                repeat_penalty=AGENT_RETRY_REPEAT_PENALTY,
+                max_tokens_override=AGENT_MAX_TOKENS,
+                repeat_penalty=AGENT_REPEAT_PENALTY,
             )
+        except HTTPException as exc:
+            detail = str(exc.detail or "").lower()
+            if "exceed" in detail or "context" in detail or exc.status_code == 400:
+                logger.warning("Agent loop hit context size limit (%s). Compacting and retrying...", exc.detail)
+                compacted = _aggressively_compact_for_context(agent_messages)
+                compacted_request = compacted + [Message(role="system", content=reminder_content)]
+                try:
+                    tool_call = await get_llm_response(
+                        messages=compacted_request,
+                        config=config,
+                        abstract_tool_use=True,
+                        tools=tools,
+                        max_tokens_override=AGENT_RETRY_MAX_TOKENS,
+                    )
+                    agent_messages = compacted
+                except Exception as retry_exc:
+                    logger.error("Compaction retry also failed (%s). Concluding agent loop gracefully.", retry_exc)
+                    break
+            else:
+                logger.error("LLM call failed in agent loop: %s. Concluding agent loop gracefully.", exc)
+                break
+        except Exception as exc:
+            logger.error("Unexpected error in agent loop LLM call: %s. Concluding agent loop gracefully.", exc)
+            break
+
+        if not tool_call:
+            logger.warning("Agent received no tool call on first attempt - retrying once.")
+            try:
+                tool_call = await get_llm_response(
+                    messages=request_messages,
+                    config=config,
+                    abstract_tool_use=True,
+                    tools=tools,
+                    max_tokens_override=AGENT_RETRY_MAX_TOKENS,
+                    repeat_penalty=AGENT_RETRY_REPEAT_PENALTY,
+                )
+            except Exception as retry_exc:
+                logger.error("Agent retry tool call failed: %s", retry_exc)
 
         if not tool_call:
             logger.error(
@@ -804,12 +1022,7 @@ async def agent_loop(
         tool_id = tool_call.get("name")
         arguments_str = tool_call.get("arguments", "{}")
         call_id = tool_call.get("id")
-
-        print("\n\n") # DECOMMENT
-        print(f"Tool Call: %s", tool_id) # DECOMMENT
-        print("\n\n") # DECOMMENT
-
-        logger.info("Tool Call: %s", tool_id)
+        last_tool_id = tool_id or "unknown"
 
         if not tool_id:
             logger.warning("Agent received tool call without a name.")
@@ -823,7 +1036,15 @@ async def agent_loop(
                 tool_id,
                 arguments_str,
             )
-            break
+            arguments = {}
+
+        # Log the tool call explicitly to Basket console and logger
+        _log_tool_call(
+            step=step_count,
+            max_steps=MCP_TOOL_CALL_LIMIT,
+            tool_id=tool_id,
+            arguments=arguments,
+        )
 
         agent_messages.append(
             Message(
@@ -842,26 +1063,62 @@ async def agent_loop(
             )
         )
 
-        tool_call_result = await quince_mcp.tool_call(
-            tool_id,
-            arguments,
+        t_exec = time.perf_counter()
+        try:
+            tool_call_result = await quince_mcp.tool_call(
+                tool_id,
+                arguments,
+            )
+        except Exception as tool_exc:
+            logger.exception("Failed to execute tool %s: %s", tool_id, tool_exc)
+            tool_call_result = {
+                "success": False,
+                "error": str(tool_exc),
+                "message": f"Tool execution failed: {tool_exc}",
+            }
+        duration_ms = (time.perf_counter() - t_exec) * 1000
+
+        # Update active mode prompt if provided by RTSI/tool
+        mode_prompt = tool_call_result.get("mode_prompt")
+        if mode_prompt:
+            active_mode_prompt = mode_prompt
+
+        success = tool_call_result.get("success", False)
+        terminate = tool_call_result.get("terminate", False)
+        was_category_call = tool_call_result.get("was_category_call", False)
+
+        # Update next available tools
+        if was_category_call:
+            tools = quince_mcp.get_openai_tools(tool_call_result)
+        elif terminate:
+            tools = []
+
+        next_tool_names = [t["function"]["name"] for t in (tools or [])] if tools else []
+
+        # Log the tool result explicitly to Basket console and logger
+        _log_tool_result(
+            step=step_count,
+            max_steps=MCP_TOOL_CALL_LIMIT,
+            tool_id=tool_id,
+            success=success,
+            duration_ms=duration_ms,
+            result_dict=tool_call_result,
+            next_tools=next_tool_names,
         )
 
+        # Store clean outcome WITHOUT giant children schemas
+        cleaned_content = _clean_tool_result_for_llm(tool_call_result)
         agent_messages.append(
             Message(
                 role="tool",
                 tool_call_id=call_id,
-                content=json.dumps(tool_call_result),
+                content=cleaned_content,
             )
         )
 
-        success = tool_call_result.get("success")
-        terminate = tool_call_result.get("terminate")
-        was_category_call = tool_call_result.get("was_category_call")
-
         if not success:
             logger.warning(
-                "Tool execution failed: %s",
+                "Tool execution reported failure: %s",
                 tool_call_result.get("error"),
             )
             break
@@ -869,12 +1126,12 @@ async def agent_loop(
         if terminate:
             break
 
-        if was_category_call:
-            tools = quince_mcp.get_openai_tools(tool_call_result)
-
+    _log_agent_complete(step_count, last_tool_id)
     agent_messages.pop(0)
 
     return agent_messages
+
+
 
 async def text_to_voice(
     *,
@@ -882,18 +1139,128 @@ async def text_to_voice(
     config: VoicePipelineConfig,
     messages: list[Message] | None = None,
 ) -> AsyncIterator[PipelineEvent]:
+    pipeline_started_at = time.perf_counter()
     text = text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
-    conversation = await retrieve_context(text=text, config=config, messages=messages)
-
     yield PipelineEvent(type="pipeline.started", data={"mode": "text_to_voice"})
 
-    async for event in llm_to_speech(messages=conversation, config=config):
-        yield event
+    final_response = ""
+    try:
+        # --------------------------------------------------------
+        # BUILD CONVERSATION & RETRIEVE CONTEXT
+        # --------------------------------------------------------
+        conversation = await retrieve_context(text=text, config=config, messages=messages)
 
+        conversation.append(Message(role="system", content=(
+            "Never invent facts. If you're not certain, or the answer needs live/current "
+            "data, say you don't know or call a tool — never guess or make up numbers, "
+            "names, or details. 'I don't know' is always correct; a confident guess is not."
+        )))
+
+        # --------------------------------------------------------
+        # AGENTIC LOOP (MCP Tools & RTSI Browser)
+        # --------------------------------------------------------
+        pre_agent_conversation = conversation
+        agent_conversation = await agent_loop(messages=conversation, config=config)
+        speaking_conversation = summarize_agent_actions(
+            agent_conversation,
+            original_messages=pre_agent_conversation,
+        )
+
+        # Budget guard: ensure speaking conversation stays safely within context limit
+        speaking_conversation = _prune_agent_messages(speaking_conversation, max_total_chars=30000)
+
+        # --------------------------------------------------------
+        # LLM -> TTS OR TEXT-ONLY STREAM
+        # --------------------------------------------------------
+        if getattr(config, "synthesize_speech", True):
+            async for event in llm_to_speech(messages=speaking_conversation, config=config):
+                if event.type == "llm.final":
+                    final_response = str(event.data)
+                yield event
+        else:
+            full_tokens = []
+            async for token in get_llm_response_stream(messages=speaking_conversation, config=config):
+                full_tokens.append(token)
+                yield PipelineEvent(type="llm.token", data=token)
+            final_response = "".join(full_tokens).strip()
+            yield PipelineEvent(type="llm.final", data=final_response)
+
+    except Exception as exc:
+        logger.exception("text_to_voice turn encountered an error; falling back to spoken response: %s", exc)
+        exc_str = str(exc).lower()
+        if "exceed" in exc_str or "context" in exc_str or "16128" in exc_str:
+            fallback_text = (
+                "The browser page generated more content than my memory window allows. "
+                "I have paused the action here. What would you like me to do next?"
+            )
+        elif "extension" in exc_str or "bridge" in exc_str or "not connected" in exc_str:
+            fallback_text = (
+                "The browser extension is not connected, so I cannot control the browser. "
+                "Please verify the extension is active in Chrome and connected."
+            )
+        else:
+            fallback_text = (
+                "I encountered an issue while completing that request, but I am still here. "
+                "Please try again or tell me how you would like to proceed."
+            )
+
+        final_response = fallback_text
+        yield PipelineEvent(type="llm.token", data=fallback_text)
+        yield PipelineEvent(type="llm.final", data=fallback_text)
+
+        if getattr(config, "synthesize_speech", True):
+            try:
+                async for audio_chunk in text_to_speech(text=fallback_text, config=config):
+                    yield PipelineEvent(type="tts.audio", data=audio_chunk)
+            except Exception:
+                logger.exception("Fallback text_to_speech failed")
+
+    if final_response:
+        try:
+            append_chat_to_memory(application=config.application, content=final_response, source="assistant")
+        except Exception:
+            logger.exception("Failed to append final response to memory")
+
+    # --------------------------------------------------------
+    # COMPLETE
+    # --------------------------------------------------------
     yield PipelineEvent(type="pipeline.completed", data={"mode": "text_to_voice"})
+    logger.info("TEXT_TO_VOICE COMPLETE in %.3fs", time.perf_counter() - pipeline_started_at)
+
+
+# ============================================================
+# UNIFIED CHAT PIPELINE (TEXT OR VOICE)
+# ============================================================
+
+async def chat_pipeline(
+    *,
+    text: str | None = None,
+    audio_stream: AsyncIterable[bytes] | None = None,
+    config: VoicePipelineConfig | None = None,
+    messages: list[Message] | None = None,
+    final_transcript_hint: str | None = None,
+    tail_audio_hint: bytes | None = None,
+) -> AsyncIterator[PipelineEvent]:
+    if config is None:
+        config = VoicePipelineConfig()
+
+    if text is not None and text.strip():
+        async for event in text_to_voice(text=text, config=config, messages=messages):
+            yield event
+    elif audio_stream is not None:
+        async for event in voice_to_voice(
+            audio_stream=audio_stream,
+            config=config,
+            messages=messages,
+            final_transcript_hint=final_transcript_hint,
+            tail_audio_hint=tail_audio_hint,
+        ):
+            yield event
+    else:
+        raise HTTPException(status_code=400, detail="Either text or audio_stream must be provided.")
 
 
 # ============================================================
@@ -943,39 +1310,71 @@ async def voice_to_voice(
         return
 
     # --------------------------------------------------------
-    # BUILD CONVERSATION
-    # --------------------------------------------------------
-
-    conversation = await retrieve_context(text=transcript, config=config, messages=messages)
-
-    conversation.append(Message(role="system", content=(
-        "Never invent facts. If you're not certain, or the answer needs live/current "
-        "data, say you don't know or call a tool — never guess or make up numbers, "
-        "names, or details. 'I don't know' is always correct; a confident guess is not."
-    )))
-
-    # --------------------------------------------------------
-    # AGENTIC LOOP
-    # --------------------------------------------------------
-
-    pre_agent_conversation = conversation
-    agent_conversation = await agent_loop(messages=conversation, config=config)
-    speaking_conversation = summarize_agent_actions(
-        agent_conversation,
-        original_messages=pre_agent_conversation,
-    )
-
-    # --------------------------------------------------------
-    # LLM -> TTS
+    # BUILD CONVERSATION & AGENTIC TURN
     # --------------------------------------------------------
 
     final_response = ""
-    async for event in llm_to_speech(messages=speaking_conversation, config=config):
-        if (event.type == "llm.final"):
-            final_response = str(event.data)
-        yield event
+    try:
+        conversation = await retrieve_context(text=transcript, config=config, messages=messages)
 
-    append_chat_to_memory(application=config.application, content=final_response, source="assistant")
+        conversation.append(Message(role="system", content=(
+            "Never invent facts. If you're not certain, or the answer needs live/current "
+            "data, say you don't know or call a tool — never guess or make up numbers, "
+            "names, or details. 'I don't know' is always correct; a confident guess is not."
+        )))
+
+        pre_agent_conversation = conversation
+        agent_conversation = await agent_loop(messages=conversation, config=config)
+        speaking_conversation = summarize_agent_actions(
+            agent_conversation,
+            original_messages=pre_agent_conversation,
+        )
+
+        speaking_conversation = _prune_agent_messages(speaking_conversation, max_total_chars=30000)
+
+        # --------------------------------------------------------
+        # LLM -> TTS
+        # --------------------------------------------------------
+
+        async for event in llm_to_speech(messages=speaking_conversation, config=config):
+            if event.type == "llm.final":
+                final_response = str(event.data)
+            yield event
+
+    except Exception as exc:
+        logger.exception("voice_to_voice turn encountered an error; falling back to spoken response: %s", exc)
+        exc_str = str(exc).lower()
+        if "exceed" in exc_str or "context" in exc_str or "16128" in exc_str:
+            fallback_text = (
+                "The browser page generated more content than my memory window allows. "
+                "I have paused the action here. What would you like me to do next?"
+            )
+        elif "extension" in exc_str or "bridge" in exc_str or "not connected" in exc_str:
+            fallback_text = (
+                "The browser extension is not connected, so I cannot control the browser. "
+                "Please verify the extension is active in Chrome and connected."
+            )
+        else:
+            fallback_text = (
+                "I encountered an issue while completing that request, but I am still listening. "
+                "Please try again or tell me how you would like to proceed."
+            )
+
+        final_response = fallback_text
+        yield PipelineEvent(type="llm.token", data=fallback_text)
+        yield PipelineEvent(type="llm.final", data=fallback_text)
+
+        try:
+            async for audio_chunk in text_to_speech(text=fallback_text, config=config):
+                yield PipelineEvent(type="tts.audio", data=audio_chunk)
+        except Exception:
+            logger.exception("Fallback text_to_speech failed in voice_to_voice")
+
+    if final_response:
+        try:
+            append_chat_to_memory(application=config.application, content=final_response, source="assistant")
+        except Exception:
+            logger.exception("Failed to append final response to memory")
 
     # --------------------------------------------------------
     # COMPLETE

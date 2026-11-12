@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.schemas.ChatSchema import Message
 
@@ -45,10 +45,11 @@ class VoiceStartRequest(BaseModel):
 
     prompt: str | None = None
 
+    text: str | None = None
+
     stream: bool = True
 
     sample_rate: int = 16_000
-
 
     llm: VoiceLLMConfig = Field(
         default_factory=VoiceLLMConfig
@@ -59,6 +60,44 @@ class VoiceStartRequest(BaseModel):
     )
 
     application: str = Field(
+        default="quince",
         min_length=1,
         description="Application identifier for namespace isolation.",
     )
+
+class TextInputRequest(BaseModel):
+    """Configuration and text input for a Basket chat turn."""
+
+    type: Literal["text", "text_input"] = "text_input"
+
+    text: str = Field(
+        min_length=1,
+        description="User text input for the turn.",
+    )
+
+    synthesize_speech: bool = Field(
+        default=True,
+        description="Whether to synthesize TTS audio speech for the response.",
+    )
+
+    application: str = Field(
+        default="quince",
+        min_length=1,
+        description="Application identifier for namespace isolation.",
+    )
+
+    llm: VoiceLLMConfig | None = Field(
+        default_factory=VoiceLLMConfig
+    )
+
+    tts: VoiceTTSConfig | None = Field(
+        default_factory=VoiceTTSConfig
+    )
+
+    @field_validator("text")
+    @classmethod
+    def validate_non_empty_text(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("text cannot be empty or whitespace only")
+        return stripped

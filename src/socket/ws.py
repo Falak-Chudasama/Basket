@@ -10,8 +10,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from src.core.configs import STT_HOST, STT_PORT, WS_PATH
 from src.jobs.refresh_session_job import clear_session
-from src.schemas.VoiceSchema import VoiceStartRequest
-from src.services.chat.chat_pipeline import PipelineEvent, VoicePipelineConfig, voice_to_voice
+from src.schemas.VoiceSchema import VoiceStartRequest, TextInputRequest
+from src.services.chat.chat_pipeline import PipelineEvent, VoicePipelineConfig, voice_to_voice, text_to_voice
 from src.services.session.session import create_session
 from src.clients.llama_stt import LlamaRealtimeSession, STREAM_SAMPLE_RATE, STREAM_SAMPLE_WIDTH
 
@@ -347,6 +347,91 @@ class VoiceSession:
 
         await session.send_audio(audio)
 
+    async def handle_text_input(self, payload: dict[str, Any]) -> None:
+        try:
+            req = TextInputRequest.model_validate(payload)
+        except Exception as exc:
+            logger.exception("TEXT_INPUT validation failed")
+            await self.send_error("invalid_text_input", str(exc))
+            return
+
+        if self.application is not None and req.application != self.application:
+            logger.error(
+                "TEXT_INPUT rejected: application mismatch existing=%r requested=%r",
+                self.application,
+                req.application,
+            )
+            await self.send_error(
+                "application_mismatch",
+                "Application cannot change during a WebSocket connection.",
+            )
+            return
+
+        if self.application is None:
+            self.application = req.application
+
+        pipeline_config = VoicePipelineConfig(
+            application=self.application,
+            system_prompt=req.llm.system_prompt if req.llm else None,
+            model=req.llm.model if req.llm else None,
+            temperature=req.llm.temperature if req.llm else 0.7,
+            top_p=req.llm.top_p if req.llm else 1.0,
+            max_tokens=req.llm.max_tokens if req.llm else None,
+            stop=req.llm.stop if req.llm else None,
+            seed=req.llm.seed if req.llm else None,
+            abstracted=req.llm.abstracted if req.llm else True,
+            voice=req.tts.voice if req.tts else "jane",
+            tts_temperature=req.tts.temperature if req.tts else 0.5,
+            synthesize_speech=req.synthesize_speech,
+        )
+
+        messages = list(req.llm.messages) if req.llm and req.llm.messages else []
+
+        pipeline_started_at = time.perf_counter()
+        try:
+            await self.send_json({"type": "started", "mode": "text"})
+            await self.send_json({"type": "stt.final", "data": req.text})
+
+            event_count = 0
+            tts_chunks = 0
+            tts_bytes = 0
+
+            async for event in text_to_voice(
+                text=req.text,
+                config=pipeline_config,
+                messages=messages,
+            ):
+                event_count += 1
+                if event.type == "tts.audio":
+                    audio = event.data
+                    if audio:
+                        try:
+                            audio_bytes = bytes(audio)
+                            tts_chunks += 1
+                            tts_bytes += len(audio_bytes)
+                            async with self.send_lock:
+                                await self.ws.send_bytes(audio_bytes)
+                        except Exception:
+                            logger.exception("Failed to send TTS audio bytes")
+                    continue
+
+                await self.send_json(self._json_event(event))
+
+            logger.info(
+                "TEXT PIPELINE finished after %.3fs: events=%d tts_chunks=%d tts_bytes=%d",
+                time.perf_counter() - pipeline_started_at,
+                event_count,
+                tts_chunks,
+                tts_bytes,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("TEXT PIPELINE failed")
+            await self.send_error("pipeline_failed", str(exc))
+        finally:
+            self._reset_turn_state()
+
     async def handle_control_message(self, text: str) -> None:
         try:
             payload = json.loads(text)
@@ -371,6 +456,8 @@ class VoiceSession:
             await self.handle_start(payload)
         elif message_type == "stop":
             await self.handle_stop()
+        elif message_type in ("text", "text_input"):
+            await self.handle_text_input(payload)
         elif message_type == "ping":
             await self.handle_ping()
         elif message_type == "cancel":
@@ -387,6 +474,7 @@ class VoiceSession:
             "type": "ready",
             "protocol": "basket-voice-v1",
             "transport": "websocket",
+            "text_input": True,
             "audio_input": {
                 "encoding": "pcm_s16le",
                 "sample_rate": STREAM_SAMPLE_RATE,

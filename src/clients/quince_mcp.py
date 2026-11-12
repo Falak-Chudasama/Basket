@@ -4,16 +4,29 @@ from contextlib import AsyncExitStack
 from typing import Any
 from mcp import Client, StdioServerParameters
 
-from src.core.configs import PATH_TO_QUINCE
+import logging
+from src.core.configs import (
+    PATH_TO_QUINCE,
+    QUINCE_MCP_URL,
+    QUINCE_MCP_TRANSPORT,
+)
 from src.schemas.QuinceMCPTool import QuinceTool
+
+logger = logging.getLogger(__name__)
 
 
 class QuinceMCPClient:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        url: str = QUINCE_MCP_URL,
+        transport: str = QUINCE_MCP_TRANSPORT,
+    ) -> None:
         self._stack = AsyncExitStack()
         self._client: Client | None = None
+        self._url = url
+        self._transport = transport
 
-        self._server = StdioServerParameters(
+        self._stdio_server = StdioServerParameters(
             command=str(
                 PATH_TO_QUINCE
                 / ".venv"
@@ -21,7 +34,9 @@ class QuinceMCPClient:
                 / "python.exe"
             ),
             args=[
-                str(PATH_TO_QUINCE / "run_mcp.py")
+                str(PATH_TO_QUINCE / "run_mcp.py"),
+                "--transport",
+                "stdio",
             ],
         )
 
@@ -46,7 +61,7 @@ class QuinceMCPClient:
 
     async def _get_tools(self):
         if self._client is None:
-            raise RuntimeError("Quince MCP client is not started.")
+            await self.start()
         result = await self._client.list_tools()
         return result
 
@@ -56,25 +71,61 @@ class QuinceMCPClient:
         arguments: dict[str, Any] | None = None
     ):
         if self._client is None:
-            raise RuntimeError("Quince MCP client is not started.")
+            await self.start()
 
-        return await self._client.call_tool(
-            name="navigate",
-            arguments={
-                "tool_id": tool_id,
-                "arguments": arguments
-            }
-        )
+        try:
+            return await self._client.call_tool(
+                name="navigate",
+                arguments={
+                    "tool_id": tool_id,
+                    "arguments": arguments
+                }
+            )
+        except Exception as exc:
+            logger.warning("MCP tool call failed (%s). Reconnecting...", exc)
+            await self.stop()
+            await self.start()
+            return await self._client.call_tool(
+                name="navigate",
+                arguments={
+                    "tool_id": tool_id,
+                    "arguments": arguments
+                }
+            )
 
     async def start(self) -> None:
         if self._client is not None:
             return
-        client = Client(self._server)
+
+        # 1. Try Streamable HTTP if configured
+        if self._transport == "streamable-http" and self._url:
+            try:
+                client = Client(self._url)
+                self._client = await self._stack.enter_async_context(client)
+                logger.info("Connected to Quince MCP server via Streamable HTTP at %s", self._url)
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Could not connect to Quince MCP at %s (%s). Falling back to stdio...",
+                    self._url,
+                    exc,
+                )
+                await self._stack.aclose()
+                self._stack = AsyncExitStack()
+
+        # 2. Fallback to stdio subprocess
+        client = Client(self._stdio_server)
         self._client = await self._stack.enter_async_context(client)
+        logger.info("Started Quince MCP client via local stdio subprocess.")
 
     async def stop(self) -> None:
-        await self._stack.aclose()
-        self._client = None
+        try:
+            await self._stack.aclose()
+        except Exception:
+            pass
+        finally:
+            self._client = None
+            self._stack = AsyncExitStack()
 
     async def get_root(self):
         return await self.tool_call(tool_id="root")

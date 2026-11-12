@@ -26,10 +26,13 @@ class BM25:
             for document in self.documents
         ]
 
-        if tokenized_documents:
-            self.index = BM25Okapi(
-                tokenized_documents
-            )
+        if tokenized_documents and any(tokens for tokens in tokenized_documents):
+            try:
+                self.index = BM25Okapi(
+                    tokenized_documents
+                )
+            except ZeroDivisionError:
+                self.index = None
         else:
             self.index = None
 
@@ -89,8 +92,13 @@ class BM25:
             return []
 
         query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return []
 
-        scores = self.index.get_scores(query_tokens)
+        try:
+            scores = self.index.get_scores(query_tokens)
+        except Exception:
+            return []
 
         ranked_indices = sorted(
             range(len(scores)),

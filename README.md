@@ -1,414 +1,295 @@
-# Basket
+<div align="center">
+  <img src="client/public/icons/basket-icon.svg" alt="Basket Icon" width="120" height="120" />
 
-Basket is the backend runtime for Quince, a local voice-first AI assistant. It handles the part of the system that sits between the user-facing client, model services, retrieval and memory, and Quince's MCP server.
+  # Basket
 
-The project started from a simple need: keep the assistant's reasoning and orchestration separate from the capabilities it can use. Basket is responsible for deciding what should happen during a turn. Quince exposes the capabilities that can actually be executed on the machine.
+  **Complete Local Operations Control Center & Fruits Ecosystem Operations Dashboard**
 
-## At a glance
+  *The central nervous system and unified operations cockpit for the Fruits ecosystem. Eliminates manual terminal operations by providing independent instance management, one-click aggregate workflows, live Azeret Mono log streaming, real reverse-proxy route monitoring, and Windows Task Scheduler integration.*
 
-| Area | Responsibility |
-| --- | --- |
-| Conversation | Session state, history, context assembly |
-| LLM | Response generation and agent reasoning |
-| Retrieval | Semantic search, BM25, candidate reranking |
-| Memory | Persistent memories, commands, conversation context |
-| MCP | Capability discovery and tool execution through Quince |
-| Voice | STT, TTS, WebSocket streaming |
-| API | FastAPI endpoints for model, voice and context services |
+  <br />
 
-## Architecture
+  [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+  [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react)](https://react.dev/)
+  [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
+  [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
+  [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python)](https://python.org/)
+  [![Nginx](https://img.shields.io/badge/Proxy-Nginx_1.28-009639?style=flat-square&logo=nginx)](https://nginx.org/)
+  [![Zero Cloud](https://img.shields.io/badge/Privacy-100%25_Local--First-amber?style=flat-square)](#-backend-security--local-first-guarantee)
+  [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-At runtime, the request path looks like this:
+  <br />
 
-```text
-User
-  |
-  v
-Quince Client
-  |  WebSocket
-  v
-Basket
-  |
-  +-------------------------------+
-  | Conversation Manager           |
-  | LLM / Agent Runtime            |
-  | Retrieval + Memory             |
-  | MCP Client                     |
-  +-------------------------------+
-                 |
-                 | MCP over stdio
-                 v
-        Quince MCP Server
-                 |
-                 v
-        Hierarchical Tool Registry
-          /    /      |      \
-     System  Work   Knowledge  Memory  Chat
+  <p align="center">
+    <a href="#-overview">Overview</a> •
+    <a href="#-architecture--dashboard-urls">Dashboard URLs</a> •
+    <a href="#-central-service-registry">Service Registry</a> •
+    <a href="#-management-scripts-bat-system">BAT Scripts</a> •
+    <a href="#-fruits-ecosystem-directory">Fruits Ecosystem</a> •
+    <a href="#-nginx-reverse-proxy-routes">Nginx & Routes</a> •
+    <a href="#-windows-task-scheduler--logging">Task Scheduler & Logs</a> •
+    <a href="#-getting-started">Getting Started</a>
+  </p>
+</div>
+
+---
+
+## 🌟 Overview
+
+**Basket** is the root project and central command center for the entire **Fruits ecosystem** (Banana, Plum, Kiwi, Quince, and Lemon). 
+
+Previously, managing backends, Vite servers, AI models (llama.cpp, LM Studio), voice speech runtimes (Qwen3-ASR, Pocket TTS), MongoDB databases, and Nginx required opening dozens of cmd windows, navigating directories, running fragmented `.bat` files, or executing broad `taskkill` commands that frequently terminated unrelated background processes.
+
+Basket replaces this fragmented workflow with a unified **Apple-grade desktop operations application** adhering strictly to the *Quiet Utility* design language:
+
+* 🎛️ **Granular Process Lifecycle** — Start, restart, and end individual instances (e.g. restart only Quince LLM without disrupting STT, TTS, MongoDB, or Banana).
+* 🌐 **Complete Aggregate Workflows** — Safely start, restart, or shut down all managed instances across the entire ecosystem in strict dependency order.
+* 📜 **Live Azerbaijan/Azeret Mono Logs** — Inspect colored, collapsible, real-time log streams directly inside the web client with pause/resume, search filtering, and line limits.
+* 🚦 **Real Route Verification** — Active health checks distinguishing whether a process is running, whether reverse proxies respond, and whether upstream routes are reachable.
+* 🛡️ **Verifiable Process Identities** — Eliminates dangerous `taskkill /IM python.exe` by tracking PID, process creation timestamp, verified parent-child process trees, and listening ports.
+* 🚪 **Nginx First-Class Controls** — Validate syntax (`nginx -t`), reload configurations (`nginx -s reload`), and monitor ports 80 and 443 directly from the dashboard.
+
+---
+
+## 🌐 Architecture & Dashboard URLs
+
+Basket provides both a dedicated local control service and full reverse-proxy integration via Nginx:
+
+| Interface | URL | Destination | Role |
+|---|---|---|---|
+| **Local Direct Dashboard** | `http://127.0.0.1:7010` | Basket Control API & Client | Direct access bypassing reverse proxy |
+| **Hosted Nginx Dashboard** | `http://basket.com` | `client/dist` & `127.0.0.1:7010/api` | Primary browser URL (HTTP) |
+| **Hosted SSL Dashboard** | `https://basket.com` | `client/dist` & `127.0.0.1:7010/api` | Primary browser URL (HTTPS / SSL) |
+| **Basket Core API** | `http://api.basket.com` | `127.0.0.1:7000` | Core FastAPI backend (preserved) |
+| **Basket Core Direct** | `http://127.0.0.1:7000` | `src.main:app` | Direct FastAPI API |
+
+```mermaid
+flowchart TD
+    User([Browser Client]) -->|http://basket.com| Nginx[Nginx Reverse Proxy :80/:443]
+    User -->|http://127.0.0.1:7010| Control[Basket Control Service :7010]
+    Nginx -->|/api/*| Control
+    Nginx -->|/*| Dist[client/dist Static SPA]
+    
+    Control --> Registry[Central Service Registry]
+    Registry --> PM[Process Manager Engine]
+    
+    PM --> Infra[Infrastructure Services]
+    Infra --> BasketAPI[Basket Core API :7000]
+    Infra --> LLM[Quince LLM CUDA :7001]
+    Infra --> LMS[LM Studio :7006]
+    Infra --> STT[Qwen3-ASR :7002]
+    Infra --> TTS[Pocket TTS :7003]
+    Infra --> Mongo[MongoDB :7005 / :4090]
+    
+    PM --> Fruits[Fruits Ecosystem]
+    Fruits --> Banana[Banana Media :6060]
+    Fruits --> Plum[Plum Email :4050 / :4060]
+    Fruits --> Kiwi[Kiwi Converter :5060]
+    Fruits --> Quince[Quince MCP :7100]
+    Fruits --> Lemon[Lemon Android Client]
 ```
 
-The important boundary is between Basket and the Quince MCP server.
+---
 
-Basket contains the agent runtime and the MCP client. The LLM does not connect to the MCP server on its own. A model can request an action, but Basket is responsible for interpreting that request, navigating the MCP tool tree, executing the selected capability, and putting the result back into the reasoning loop.
+## 📋 Central Service Registry
 
-The client and backend communicate over WebSocket. Basket and the Quince MCP server communicate over MCP using JSON-RPC over stdio.
+Every managed process is declared once in `src/control/registry.py` with verified parameters, health check strategies, and process-matching signatures:
 
-## MCP and tool discovery
+| Service ID | Instance Name | Category | Host & Port | Start Command | Health Strategy | Task Scheduler |
+|---|---|---|---|---|---|---|
+| `basket-control` | Basket Operations Dashboard | Control | `127.0.0.1:7010` | `python run_control.py` | HTTP `GET /api/health` | — |
+| `basket-api` | Basket Core API Gateway | Infrastructure | `127.0.0.1:7000` | `python run.py` | HTTP `GET /docs` | `Basket Server` |
+| `nginx` | Nginx Reverse Proxy | Proxy | `127.0.0.1:80,443` | `Start Enginx` | HTTP `GET /` | `Start Enginx` |
+| `mongodb` | Basket MongoDB | Database | `127.0.0.1:7005` | `mongod --port 7005` | TCP Port `7005` | — |
+| `llm-llama` | Quince LLM (llama.cpp) | LLM | `127.0.0.1:7001` | `llama-server.exe (CUDA)` | HTTP `GET /health` | — |
+| `lms` | LM Studio Server | LLM | `127.0.0.1:7006` | `lms server start` | TCP Port `7006` | `LMS Server Start` |
+| `stt-qwen` | Qwen3-ASR Speech-to-Text | Speech | `127.0.0.1:7002` | `llama-server.exe (CPU)` | HTTP `GET /health` | — |
+| `tts-pocket` | Pocket TTS | Speech | `127.0.0.1:7003` | `pocket-tts serve` | TCP Port `7003` | — |
+| `fruit-banana` | Banana Media Utility | Fruit | `127.0.0.3:6060` | `python run.py` | HTTP `GET /docs` | `Banana Backend` |
+| `fruit-plum-backend` | Plum Email Server | Fruit | `127.0.0.2:4050,4065` | `node dist/index.js` | TCP Port `4050` | — |
+| `fruit-plum-frontend` | Plum Client Dev Server | Fruit | `127.0.0.2:4060` | `vite --port 4060` | HTTP `GET /` | — |
+| `fruit-plum-mongo` | Plum Dedicated MongoDB | Database | `127.0.0.1:4090` | `mongod --port 4090` | TCP Port `4090` | — |
+| `fruit-kiwi` | Kiwi File Converter | Fruit | `127.0.0.4:5060` | `python run.py` | HTTP `GET /docs` | `Kiwi Backend` |
+| `fruit-quince` | Quince Assistant MCP | Fruit | `127.0.0.1:7100` | `python run_mcp.py` | TCP Port `7100` | — |
+| `fruit-lemon` | Lemon Android App | Fruit | Mobile Device | Android APK | Native System | — |
 
-Quince exposes its capabilities as a hierarchy instead of sending the complete tool set to the model at once.
+> [!NOTE]
+> **SearXNG Decommissioning**: SearXNG has been decommissioned from active infrastructure. Its virtual host, routes, aggregate startup integration, and monitoring have been safely removed while retaining all historical persistent data.
 
-```text
-root
-├── system
-├── productivity
-├── knowledge
-├── memory
-└── chat
-```
+---
 
-A typical agent interaction is:
+## 🛠️ Management Scripts (BAT System)
 
-```text
-1. Start at the MCP root
-2. Navigate to a relevant category
-3. Discover the capabilities available there
-4. Read the selected capability schema
-5. Execute the tool with validated arguments
-6. Return the result to Basket
-7. Continue reasoning or produce the final response
-```
-
-Two control operations are available at the root:
-
-- `reset` clears the current MCP navigation state.
-- `terminate` ends the MCP tool session.
-
-This keeps the model's working tool set small and makes tool discovery an explicit part of the agent loop.
-
-## Request and voice flow
-
-For a text or voice turn, Basket brings together the same core pieces: context, retrieval, the model, tools, and the final response.
-
-A voice turn follows this path:
+A complete, 39-script orchestration system is organised in `infrastructure/`. Every service, fruit, and Basket itself has its own trio of scripts (`start.bat`, `restart.bat`, `end.bat`):
 
 ```text
-Audio input
-    |
-    v
-Speech-to-text
-    |
-    v
-Context + retrieval
-    |
-    v
-LLM / agent loop
-    |
-    +---- MCP tool call ----> Quince MCP Server
-    |                              |
-    |<------- tool result ---------+
-    |
-    v
-Response generation
-    |
-    v
-Text-to-speech
-    |
-    v
-Streaming audio
-```
-
-The WebSocket layer emits structured events during the pipeline, including STT, LLM and TTS stages. The client can therefore react to the turn while it is still running instead of waiting for a single final response.
-
-## Retrieval
-
-Conversation context uses hybrid retrieval. Basket combines semantic and lexical search before reranking the candidate set.
-
-```text
-                    Query
-                      |
-            +---------+---------+
-            |                   |
-            v                   v
-      Semantic search        BM25 search
-            |                   |
-            +---------+---------+
-                      |
-                      v
-             Candidate merge
-                      |
-                      v
-              Cross-encoder
-                 reranking
-                      |
-                      v
-                  Top-K
-```
-
-Current retrieval components:
-
-| Component | Implementation |
-| --- | --- |
-| Vector store | ChromaDB |
-| Embeddings | `jinaai/jina-embeddings-v5-text-nano` |
-| Lexical retrieval | `rank-bm25` |
-| Reranker | `cross-encoder/ettin-reranker-32m-v1` |
-| Chunking | Recursive character splitting |
-| Chunk size | 600 characters |
-| Chunk overlap | 80 characters |
-
-The embedding and reranker models are managed centrally and currently run on CPU.
-
-## Memory
-
-Basket keeps several kinds of context because they serve different purposes.
-
-### Conversation memory
-
-Conversation messages are persisted and indexed for retrieval. MongoDB stores the underlying records, while ChromaDB and the BM25 index provide retrieval paths.
-
-### Explicit memory
-
-Quince can store persistent memories separately from ordinary conversation history. Basket exposes the APIs used to add, retrieve and delete those memories.
-
-### Commands
-
-Commands are stored separately from memories. They can be temporary or persistent and are exposed to the agent through the MCP layer.
-
-The current data layout is:
-
-```text
-MongoDB
-├── chats
-├── memories
-└── commands
-
-ChromaDB
-└── semantic conversation index
-
-BM25
-└── lexical conversation index
-```
-
-## Model integrations
-
-Basket keeps model services behind small client interfaces so the orchestration code does not depend on one inference runtime.
-
-### LLM
-
-The codebase supports OpenAI-compatible model endpoints and includes clients for local and hosted runtimes, including llama.cpp, LM Studio, and Groq.
-
-### Speech-to-text
-
-Qwen3-ASR can be used through the configured STT service. The REST endpoint accepts uploaded audio, while the voice WebSocket path handles microphone sessions.
-
-### Text-to-speech
-
-Pocket TTS is integrated into the response pipeline. Audio is produced as PCM chunks and streamed back to the client.
-
-## API
-
-Basket runs as a FastAPI application.
-
-### Voice
-
-```text
-WS /ws
-```
-
-### LLM
-
-```text
-POST /llm/chat
-GET  /llm/models
-POST /llm/load
-POST /llm/unload
-POST /llm/unload-all
-```
-
-### Speech-to-text
-
-```text
-POST /stt/transcribe
-```
-
-### Text-to-speech
-
-```text
-POST /tts/synthesize
-```
-
-### Memory
-
-```text
-POST   /context/memory/add
-POST   /context/memory/get
-POST   /context/memory/get_all
-DELETE /context/memory/delete
-POST   /context/memory/delete_all
-```
-
-### Commands
-
-```text
-POST   /context/command/add
-POST   /context/command/get_all
-POST   /context/command/delete
-POST   /context/command/delete_all
-```
-
-FastAPI's interactive documentation is available when the server is running.
-
-## Repository layout
-
-```text
-Basket/
-├── infrastructure/
-│   ├── config.bat
+infrastructure/
+├── [Original preserved scripts: config.bat, start.bat, stop.bat, restart.bat, status.bat]
+│
+├── logs/                         <-- Per-instance persistent UTF-8 logs
+├── run/                          <-- Verified PID records & operations.json
+│
+├── all/                          <-- Full Ecosystem Orchestration
 │   ├── start.bat
-│   ├── stop.bat
 │   ├── restart.bat
-│   └── status.bat
+│   └── end.bat
 │
-├── src/
-│   ├── apis/                  # FastAPI routes
-│   ├── clients/               # LLM, STT, TTS and MCP clients
-│   ├── core/                  # Runtime configuration and state
-│   ├── jobs/                  # Startup and lifecycle jobs
-│   ├── schemas/               # Pydantic and internal schemas
-│   ├── services/
-│   │   ├── bm25/              # Lexical retrieval
-│   │   ├── chat/              # Agent and voice pipeline
-│   │   ├── chunker/           # Conversation chunking
-│   │   ├── db/                # MongoDB access
-│   │   ├── embedding/         # Embedding generation
-│   │   ├── models/            # Model loading and lifecycle
-│   │   ├── retrieval/          # Retrieval and reranking
-│   │   ├── session/            # Session and chat persistence
-│   │   └── vectordb/           # ChromaDB integration
-│   ├── socket/                # WebSocket handling
-│   ├── utils/                 # Shared utilities
-│   └── main.py                # FastAPI entry point
+├── basket/                       <-- Basket API Gateway
+│   ├── start.bat
+│   ├── restart.bat
+│   └── end.bat
 │
-├── .env.example
-├── requirements.txt
-├── run.py
-└── TODO.md
+├── nginx/                        <-- Nginx Edge Reverse Proxy
+│   ├── start.bat
+│   ├── restart.bat
+│   └── end.bat
+│
+├── mongodb/                      <-- Core Basket MongoDB Database
+│   ├── start.bat
+│   ├── restart.bat
+│   └── end.bat
+│
+├── llama/                        <-- Quince LLM (llama.cpp CUDA)
+│   ├── start.bat
+│   ├── restart.bat
+│   └── end.bat
+│
+├── lms/                          <-- LM Studio Local Server
+│   ├── start.bat
+│   ├── restart.bat
+│   └── end.bat
+│
+├── stt/                          <-- Qwen3-ASR Speech-to-Text
+│   ├── start.bat
+│   ├── restart.bat
+│   └── end.bat
+│
+├── tts/                          <-- Pocket TTS Text-to-Speech
+│   ├── start.bat
+│   ├── restart.bat
+│   └── end.bat
+│
+└── fruits/
+    ├── banana/                   <-- Banana Media Utility
+    │   ├── start.bat
+    │   ├── restart.bat
+    │   └── end.bat
+    ├── plum/                     <-- Plum Email Assistant (Server, Client & Mongo)
+    │   ├── start.bat
+    │   ├── restart.bat
+    │   └── end.bat
+    ├── kiwi/                     <-- Kiwi File Converter
+    │   ├── start.bat
+    │   ├── restart.bat
+    │   └── end.bat
+    ├── quince/                   <-- Quince Local Voice Runtime & MCP Server
+    │   ├── start.bat
+    │   ├── restart.bat
+    │   └── end.bat
+    └── lemon/                    <-- Lemon Android Client (Status reporting)
+        ├── start.bat
+        ├── restart.bat
+        └── end.bat
 ```
 
-## Running Basket
+### Script Execution Features
+* **Safe Target Isolation**: Executing `infrastructure/llama/restart.bat` restarts Quince LLM without terminating STT, TTS, MongoDB, or Nginx.
+* **Interactive vs Automated**: Scripts pause when double-clicked in Windows Explorer, but exit cleanly without pausing when passed `/nopause` or when `BASKET_NO_PAUSE=1` is set.
+* **Exit Codes**: Standard exit codes (`0` for verified success, `1` for error) allow scripts to be embedded into external CI or scheduled tasks.
 
-Basket is primarily developed for a local Windows setup and expects the supporting services to be available on the configured hosts and ports.
+---
 
-### Requirements
+## 🍓 Fruits Ecosystem Directory
 
-- Python 3.11+
-- MongoDB
-- A compatible LLM server such as LM Studio or llama.cpp
-- Qwen3-ASR for speech recognition when using voice input
-- Pocket TTS for speech synthesis
-- Quince with its MCP server
+The dashboard showcases every fruit using its genuine branding and highlights its operational state:
 
-### 1. Create a virtual environment
+| Fruit | Application Type | Logo Source | Browser Route | Upstream Destination | Redirector Status |
+|---|---|---|---|---|---|
+| **Banana** | Media Downloader & Audio Trimmer | `banana-icon.svg` | `https://banana.com` | `fruits/banana/client/dist` (API: `127.0.0.3:6060`) | Active Web Gateway |
+| **Plum** | Personal Intelligent Email Client | `plum-icon.svg` | `https://plum.com` | `127.0.0.2:4060` (API: `127.0.0.2:4050`, WS: `4065`) | Active Web Gateway |
+| **Kiwi** | Offline File & Format Converter | `kiwi-icon.svg` | `https://kiwi.com` | `fruits/kiwi/client/dist` (API: `127.0.0.4:5060`) | Active Web Gateway |
+| **Quince** | Windows AI Runtime & System MCP | Stylized Letter Mark | None | `stdio / 127.0.0.1:7100` | **No Redirector** (System Assistant) |
+| **Lemon** | Private Android DNS Workspace | `lemon-icon.png` | None | Mobile TUN Loopback | **No Redirector** (Android Client) |
+| **Cherry** | Ecosystem Workspace Module | `basket-icon.svg` | None | Local Workspace | Initialized |
 
+---
+
+## 🌐 Nginx Reverse-Proxy Routes
+
+Basket configures and manages the edge reverse proxy hosted in `C:\nginx`:
+
+```nginx
+# Basket Operations Dashboard
+server {
+    listen 80;
+    server_name basket.com;
+    root C:/Users/ADMIN/OneDrive/CODES/Projects/Projects/Basket/client/dist;
+    index index.html;
+    location /api/ {
+        proxy_pass http://127.0.0.1:7010/api/;
+    }
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+* **Hosts Entry**: Ensure `127.0.0.1 basket.com` exists in `C:\Windows\System32\drivers\etc\hosts`.
+* **Zero CORS**: Because the dashboard web app and its control API are served under the same origin via both `http://basket.com` and `http://127.0.0.1:7010`, requests execute with zero CORS overhead or mixed-content errors.
+
+---
+
+## ⏰ Windows Task Scheduler & Logging
+
+Basket natively integrates with processes launched at Windows boot via Task Scheduler:
+
+* **Discovered Tasks**:
+  * `Start Enginx` (`C:\nginx\run-enginx.bat`) — Runs with highest elevation to manage port 80/443.
+  * `Banana Backend` (`C:\Basket\Banana\start-server.bat`) — Launches Banana FastAPI server.
+  * `Kiwi Backend` (`C:\Kiwi\start-backend.bat`) — Launches Kiwi FastAPI converter.
+  * `LMS Server Start` (`C:\Basket\lms-server-start.bat`) — Launches LM Studio server.
+  * `Basket Server` (`infrastructure\start.bat`) — Launches Basket core.
+* **Persistent Logging**:
+  * All stdout and stderr streams are redirected to `infrastructure/logs/<service_id>.log`.
+  * Logs preserve original timestamps and UTF-8 encoding.
+  * Rendered inside the client using local **Azeret Mono** variable fonts with syntax-aware color tagging (errors in rose red, warnings in amber, status messages in emerald).
+
+---
+
+## 🚀 Getting Started
+
+### 1. Prerequisites
+* Windows 10/11
+* Python 3.10+ (located in workspace `.venv`)
+* Node.js v18+ & npm (for building the client)
+* Nginx installed at `C:\nginx`
+
+### 2. Build the Operations Client
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+cd client
+npm install
+npm run build
 ```
+*(Builds static production assets directly into `client/dist/`)*
 
-### 2. Install dependencies
-
+### 3. Start Basket Operations Control
 ```powershell
-pip install -r requirements.txt
+# Directly via Python:
+.\.venv\Scripts\python.exe run_control.py
+
+# Or via the new management script:
+.\infrastructure\basket\start.bat
 ```
 
-### 3. Create the environment file
+### 4. Access the Dashboard
+Open your browser and navigate to:
+* **`http://127.0.0.1:7010`**
+* **`http://basket.com`** (or `https://basket.com`)
 
-```powershell
-copy .env.example .env
-```
+---
 
-Then configure the service endpoints and model settings in `.env`.
+## 🔒 Security & Local-First Guarantee
 
-A typical local setup uses values similar to:
-
-```env
-BASKET_HOST=127.0.0.1
-BASKET_PORT=7000
-
-MONGODB_URI=mongodb://localhost:7005/
-BASKET_DB=basket
-
-LLM_HOST=127.0.0.1
-LLM_PORT=7001
-
-STT_HOST=127.0.0.1
-STT_PORT=7002
-
-TTS_HOST=127.0.0.1
-TTS_PORT=7003
-```
-
-### 4. Configure the Quince MCP server
-
-Basket currently launches the Quince MCP server as a stdio child process. The Quince path is therefore environment-specific and must point to the local Quince checkout.
-
-### 5. Start Basket
-
-```powershell
-python run.py
-```
-
-The default local endpoints are:
-
-```text
-http://127.0.0.1:7000
-ws://127.0.0.1:7000/ws
-```
-
-The repository also includes Windows batch scripts under `infrastructure/` for the local development setup.
-
-## Configuration
-
-Most runtime settings are loaded from environment variables. The repository includes `.env.example` as the starting point.
-
-The main groups are:
-
-```text
-Basket server
-Database
-LLM
-STT
-TTS
-Retrieval
-MCP / Quince
-```
-
-Keep machine-specific paths and service addresses out of source control when possible.
-
-## Development notes
-
-Basket is still under active development. The core runtime is already in place, but some areas are intentionally evolving, particularly realtime interaction, memory handling, MCP lifecycle behavior, and environment setup.
-
-That is reflected in `TODO.md` and in the current separation between the orchestration code and the Quince capability layer.
-
-## Project relationship
-
-Basket is one part of the larger Quince system.
-
-```text
-Quince Client
-    |
-    | WebSocket
-    v
-Basket
-    |
-    | MCP over stdio
-    v
-Quince MCP Server
-    |
-    v
-Windows capabilities
-```
-
-Quince owns the user-facing client and machine capabilities. Basket owns the reasoning pipeline, retrieval, memory, model communication, and agent orchestration.
-
-Keeping those concerns separate makes it possible to change the model stack or retrieval system without moving operating-system logic into the backend, and to expand Quince's capabilities without putting Windows-specific code into Basket.
+* **Localhost Binding**: The Basket Control API binds strictly to `127.0.0.1` and never binds to public interfaces (`0.0.0.0`).
+* **Allowlisted Operations**: The API accepts only validated service IDs and predefined operation verbs (`start`, `restart`, `end`). Arbitrary shell execution or path traversal is strictly prohibited.
+* **No Telemetry**: Basket operates 100% offline with zero cloud telemetry, tracking pixels, or remote dependencies.

@@ -8,11 +8,12 @@ REM ============================================================
 REM ============================================================
 REM  PORTS
 REM ============================================================
-set "BASKET_PORT=7000"
-set "LLM_PORT=7001"
-set "STT_PORT=7002"
-set "TTS_PORT=7003"
-set "BASKET_DB_PORT=7005"
+set "BASKET_PORT=10010"
+set "LLM_PORT=10030"
+set "STT_PORT=10040"
+set "TTS_PORT=10050"
+set "BASKET_DB_PORT=10000"
+set "BASKET_CONTROL_PORT=10020"
 
 REM ============================================================
 REM  HOST
@@ -65,8 +66,8 @@ REM ============================================================
 
 @REM  set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\Qwen3-ASR-1.7B-Q8_0.gguf"
 @REM  set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-1.7B-GGUF\snapshots\36a678687ba7d07a74ca70ccb0e36902e005fb80\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
-set "ASR_MODEL=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\Qwen3-ASR-0.6B-Q8_0.gguf"
-set "ASR_MMPROJ=C:\Users\ADMIN\.cache\huggingface\hub\models--ggml-org--Qwen3-ASR-0.6B-GGUF\snapshots\928ab958557df9aa2ef1c93e0e83c7ad0933fae2\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"
+set "ASR_MODEL=C:\Users\ADMIN\models\qwen3-asr-0.6b-q4\Qwen3-ASR-0.6B.Q4_K_M.gguf"
+set "ASR_MMPROJ=C:\Users\ADMIN\models\qwen3-asr-0.6b-q4\Qwen3-ASR-0.6B.mmproj-Q8_0.gguf"
 
 REM ============================================================
 REM  POCKET TTS

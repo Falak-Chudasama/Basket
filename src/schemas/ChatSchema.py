@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     abstracted: bool = True
     abstract_tool_use: bool = False
     thinking: bool = False
+    grammar: Optional[str] = None
     tools: list[dict[str, Any]] = []
     tool_choice: Literal["required", "auto", "none"] = "none"
-    is_tool_call_request: bool = True if len(tools) > 0 else False
+    is_tool_call_request: bool = False

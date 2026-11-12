@@ -4,7 +4,7 @@ import logging
 import re
 import uuid
 from openai import OpenAI
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from fastapi.responses import StreamingResponse
 from typing import Any, Optional
 
@@ -75,14 +75,122 @@ _BASE_RULES = (
     'integer ::= "-"? [0-9]+',
     'number ::= "-"? [0-9]+ ("." [0-9]+)?',
     'string ::= [^<\\x00-\\x1F]+',
+    'array ::= "[" [^<\\x00-\\x1F]* "]"',
+    'object ::= "{" [^<\\x00-\\x1F]* "}"',
 )
 
-_PRIMITIVE_TYPES = {"string", "boolean", "integer", "number"}
+_PRIMITIVE_TYPES = {"string", "boolean", "integer", "number", "array", "object"}
 
 _OPEN_CALL = _gbnf_literal("<tool_call>\n")
 _CLOSE_CALL = _gbnf_literal("</tool_call>\n")
 _CLOSE_FUNCTION = _gbnf_literal("</function>\n")
 _CLOSE_PARAMETER = _gbnf_literal("\n</parameter>\n")
+
+MAX_GRAMMAR_LENGTH = 65536
+
+
+def validate_gbnf(grammar: str, max_length: int = MAX_GRAMMAR_LENGTH) -> None:
+    if not isinstance(grammar, str):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid GBNF grammar: grammar must be a string."
+        )
+    trimmed = grammar.strip()
+    if not trimmed:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid GBNF grammar: grammar cannot be empty or blank."
+        )
+    if len(grammar) > max_length:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid GBNF grammar: size ({len(grammar)} characters) exceeds maximum limit of {max_length} characters."
+        )
+    if not re.search(r"(?:^|\n)\s*root\s*::=", grammar):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid GBNF grammar: missing required 'root' rule (e.g. 'root ::= ...')."
+        )
+
+    i = 0
+    n = len(grammar)
+    paren_depth = 0
+    in_string = False
+    in_charset = False
+
+    while i < n:
+        ch = grammar[i]
+
+        if in_string:
+            if ch == "\\":
+                i += 2
+                continue
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if in_charset:
+            if ch == "\\":
+                i += 2
+                continue
+            elif ch == "]":
+                in_charset = False
+            i += 1
+            continue
+
+        if ch == "#":
+            while i < n and grammar[i] != "\n":
+                i += 1
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch == "[":
+            in_charset = True
+        elif ch == "(":
+            paren_depth += 1
+        elif ch == ")":
+            paren_depth -= 1
+            if paren_depth < 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Invalid GBNF grammar: unexpected closing parenthesis ')'."
+                )
+        i += 1
+
+    if in_string:
+        raise HTTPException(status_code=422, detail="Invalid GBNF grammar: unclosed string literal.")
+    if in_charset:
+        raise HTTPException(status_code=422, detail="Invalid GBNF grammar: unclosed character class bracket '['.")
+    if paren_depth != 0:
+        raise HTTPException(status_code=422, detail="Invalid GBNF grammar: unclosed parenthesis '('.")
+
+
+def _validate_grammar_compatibility(request: ChatRequest) -> None:
+    if request.grammar is not None:
+        if bool(request.tools):
+            raise HTTPException(
+                status_code=422,
+                detail="Conflict: cannot provide both 'grammar' and 'tools'."
+            )
+        if request.tool_choice != "none":
+            raise HTTPException(
+                status_code=422,
+                detail="Conflict: cannot provide 'grammar' when 'tool_choice' is not 'none'."
+            )
+        if request.is_tool_call_request:
+            raise HTTPException(
+                status_code=422,
+                detail="Conflict: cannot provide 'grammar' when 'is_tool_call_request' is True."
+            )
+        if request.abstract_tool_use:
+            raise HTTPException(
+                status_code=422,
+                detail="Conflict: cannot provide 'grammar' with 'abstract_tool_use' enabled."
+            )
+        validate_gbnf(request.grammar)
+
 
 def _get_tool_call_grammar(tools: list[dict[str, Any]]) -> str:
     if not tools:
@@ -120,10 +228,7 @@ def _get_tool_call_grammar(tools: list[dict[str, Any]]) -> str:
                 if isinstance(schema_type, list):
                     schema_type = next((t for t in schema_type if t != "null"), None)
                 if schema_type not in _PRIMITIVE_TYPES:
-                    raise ValueError(
-                        f"Unsupported type {schema_type!r} for parameter "
-                        f"'{prop_name}' of tool '{tool_name}'."
-                    )
+                    schema_type = "string"
                 value_ref = schema_type
 
             parameter = " ".join(
@@ -185,7 +290,12 @@ def _parse_grammar_tool_call(
         elif prop_type == "number":
             arguments[prop_name] = float(raw)
         elif prop_type == "boolean":
-            arguments[prop_name] = raw == "true"
+            arguments[prop_name] = raw.strip().lower() == "true"
+        elif prop_type in ("array", "object"):
+            try:
+                arguments[prop_name] = json.loads(raw.strip())
+            except Exception:
+                arguments[prop_name] = raw.strip()
         else:
             arguments[prop_name] = raw
 
@@ -300,6 +410,8 @@ def _build_message(request: ChatRequest):
     return final_messages
 
 def _build_request(request: ChatRequest, stream: bool):
+    _validate_grammar_compatibility(request)
+
     payload = {
         "model": request.model or LLM_DEFAULT_ID,
         "messages": _build_message(request),
@@ -324,6 +436,9 @@ def _build_request(request: ChatRequest, stream: bool):
         payload["temperature"] = 0
         payload["repeat_penalty"] = 1.0
     else:
+        if request.grammar is not None:
+            payload["grammar"] = request.grammar
+
         if request.tools is not None:
             payload["parallel_tool_calls"] = False
         if request.tool_choice is not None:
@@ -467,7 +582,11 @@ async def _chat_completion_non_streaming(request: ChatRequest):
 
     return data
 
-async def _chat_completion_streaming(request: ChatRequest):
+async def _chat_completion_streaming(
+    request: ChatRequest,
+    application: Optional[str] = None,
+    request_id: Optional[str] = None,
+):
     model = request.model or LLM_DEFAULT_ID
     await _ensure_model_loaded(model)
 
@@ -538,27 +657,59 @@ async def _chat_completion_streaming(request: ChatRequest):
             await response.aclose()
             await http_client.aclose()
 
+    req_id = request_id or str(uuid.uuid4())
+    stream_headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "X-Request-ID": req_id,
+    }
+    if application:
+        stream_headers["X-Basket-Application"] = application
+
     return StreamingResponse(
         event_generator(),
         media_type="text/plain",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
+        headers=stream_headers,
     )
 
-async def _chat(request: ChatRequest):
+async def _chat(
+    request: ChatRequest,
+    application: Optional[str] = None,
+    request_id: Optional[str] = None,
+    response: Optional[Response] = None,
+):
     if not request.messages:
         raise HTTPException(
             status_code=400,
             detail="At least one message is required."
         )
 
-    if request.stream:
-        return await _chat_completion_streaming(request)
+    _validate_grammar_compatibility(request)
 
-    return await _chat_completion_non_streaming(request)
+    req_id = request_id or str(uuid.uuid4())
+    logger.info(
+        "Chat request [app=%s, req_id=%s, model=%s, stream=%s, grammar=%s]",
+        application or "unspecified",
+        req_id,
+        request.model or LLM_DEFAULT_ID,
+        request.stream,
+        bool(request.grammar),
+    )
+
+    if request.stream:
+        return await _chat_completion_streaming(
+            request,
+            application=application,
+            request_id=req_id,
+        )
+
+    result = await _chat_completion_non_streaming(request)
+    if response is not None:
+        response.headers["X-Request-ID"] = req_id
+        if application:
+            response.headers["X-Basket-Application"] = application
+    return result
 
 async def _get_models():
     try:
