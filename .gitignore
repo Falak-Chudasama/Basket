@@ -53,3 +53,6 @@ Thumbs.db
 *.aab
 .gradle/
 build/
+# Fruits Ecosystem Repositories & Sub-directories
+fruits/
+fruits/*

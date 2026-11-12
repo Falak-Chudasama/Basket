@@ -1,0 +1,20 @@
+[submodule "fruits/banana"]
+	path = fruits/banana
+	ignore = all
+
+[submodule "fruits/kiwi"]
+	path = fruits/kiwi
+	ignore = all
+
+[submodule "fruits/lemon"]
+	path = fruits/lemon
+	ignore = all
+
+[submodule "fruits/plum"]
+	path = fruits/plum
+	ignore = all
+
+[submodule "fruits/quince"]
+	path = fruits/quince
+	ignore = all
+
