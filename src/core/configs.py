@@ -54,3 +54,8 @@ QUINCE_MCP_HOST = os.getenv("QUINCE_MCP_HOST", "127.0.0.5")
 QUINCE_MCP_PORT = int(os.getenv("QUINCE_MCP_PORT", "10010"))
 QUINCE_MCP_URL = os.getenv("QUINCE_MCP_URL", f"http://{QUINCE_MCP_HOST}:{QUINCE_MCP_PORT}/mcp")
 QUINCE_MCP_TRANSPORT = os.getenv("QUINCE_MCP_TRANSPORT", "streamable-http")
+
+# Central Google OAuth
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:10010/user/auth/callback")

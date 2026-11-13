@@ -236,6 +236,8 @@ class ServiceManager:
                 except Exception:
                     cwd = ""
                 combined_context = f"{cmdline} {cwd}".strip()
+                if self.service.id == "basket-api" and "fruits" in combined_context:
+                    return False
                 if combined_context:
                     matched = all(
                         needle.lower().replace("/", "\\") in combined_context

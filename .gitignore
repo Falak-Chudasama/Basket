@@ -22,6 +22,9 @@ env/
 .env.local
 .env.*
 !.env.example
+client_secret*.json
+credentials*.json
+
 
 # Process Manager Runtime & State Files
 infrastructure/logs/*.log

@@ -7,6 +7,7 @@ from src.apis.stt import sttRouter
 from src.apis.tts import ttsRouter
 from src.apis.context import context_router
 from src.apis.chat import chatRouter
+from src.apis.auth import authRouter
 from src.socket.ws import router as wsRouter
 from src.jobs.jobs import run_jobs
 
@@ -69,6 +70,7 @@ app.include_router(sttRouter)
 app.include_router(ttsRouter)
 app.include_router(context_router)
 app.include_router(chatRouter)
+app.include_router(authRouter)
 app.include_router(wsRouter)
 
 # TODO: Remove this and keep "Serving Fruits!"
