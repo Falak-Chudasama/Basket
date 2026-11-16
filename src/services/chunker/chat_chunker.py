@@ -1,102 +1,210 @@
+from __future__ import annotations
+from typing import Any
+from uuid import uuid4
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.core.configs import (
     CHAT_CHUNK_SIZE,
-    CHAT_CHUNK_OVERLAP
+    CHAT_CHUNK_OVERLAP,
 )
 from src.utils.utils import get_datetime
-from src.core.state import (
-    quince_chats,
-    quince_memory,
-    quince_bm25_memory
+from src.services.retrieval.chat_retriever import (
+    _get_vectordb_mem,
+    _get_bm25_mem,
 )
+from src.services.session.session import _get_db_chats
 
 
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=CHAT_CHUNK_SIZE,
-    chunk_overlap=CHAT_CHUNK_OVERLAP,
-    separators=[
-        "\n\n",
-        "\n",
-        ". ",
-        "? ",
-        "! ",
-        ", ",
-        " ",
-        ""
-    ],
-)
+def _get_splitter(chunk_size: int = CHAT_CHUNK_SIZE, chunk_overlap: int = CHAT_CHUNK_OVERLAP) -> RecursiveCharacterTextSplitter:
+    return RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=[
+            "\n\n",
+            "\n",
+            ". ",
+            "? ",
+            "! ",
+            ", ",
+            " ",
+            "",
+        ],
+    )
 
 
 def chunk_text(
     text: str,
-    application: str,
-    role: str,
-    memory_type: str,
-    source_type: str,
-    application_semantic_memory,
-    application_bm25_memory,
-    application_chats
-):
-    current_chat = (
-        application_chats.get_current_chat()
-    )
+    application: str = "quince",
+    role: str = "user",
+    memory_type: str = "short_term",
+    source_type: str = "conversation",
+    application_semantic_memory=None,
+    application_bm25_memory=None,
+    application_chats=None,
+    session_id: str | None = None,
+    chunk_size: int = CHAT_CHUNK_SIZE,
+    chunk_overlap: int = CHAT_CHUNK_OVERLAP,
+    extra_metadata: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Chunks text and ingests it into both dense vector and BM25 stores in batch.
+    Optimized for high-volume context dumps with zero rebuild lag.
+    """
+    if not text or not text.strip():
+        return []
 
-    if current_chat is None:
-        raise ValueError(
-            "No current chat session exists."
-        )
+    if application_chats is None:
+        application_chats = _get_db_chats(application)
 
-    session_id = current_chat[
-        "session_id"
-    ]
+    if application_semantic_memory is None:
+        application_semantic_memory = _get_vectordb_mem(application)
 
-    chunks = splitter.split_text(
-        text
-    )
+    if application_bm25_memory is None:
+        application_bm25_memory = _get_bm25_mem(application)
 
-    full_chunks = []
+    # Resolve session_id
+    if session_id is None:
+        try:
+            current_chat = application_chats.get_current_chat()
+            if current_chat and "session_id" in current_chat:
+                session_id = current_chat["session_id"]
+        except Exception:
+            pass
 
-    for chunk_index, chunk_text_value in enumerate(
-        chunks
-    ):
+    if session_id is None:
+        session_id = f"{application}:session:{uuid4().hex[:8]}"
 
-        chunk_id = (
-            f"{session_id}:"
-            f"{role}:"
-            f"{chunk_index}"
-        )
+    splitter = _get_splitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = splitter.split_text(text)
+    if not chunks:
+        return []
 
-        metadata = {
+    chunk_ids: list[str] = []
+    chunk_docs: list[str] = []
+    chunk_metadatas: list[dict[str, Any]] = []
+    now = get_datetime()
+
+    for chunk_index, chunk_text_val in enumerate(chunks):
+        cid = f"{session_id}:{role}:{chunk_index}"
+        meta: dict[str, Any] = {
             "application": application,
             "memory_type": memory_type,
             "source_type": source_type,
             "role": role,
+            "source": role,
             "session_id": session_id,
             "chunk_index": chunk_index,
-            "created_at": get_datetime(),
+            "created_at": now,
         }
+        if extra_metadata:
+            meta.update(extra_metadata)
 
-        application_semantic_memory.add_memory(
-            memory_id=chunk_id,
-            document=chunk_text_value,
-            source=role,
-            memory_type=memory_type
-        )
+        chunk_ids.append(cid)
+        chunk_docs.append(chunk_text_val)
+        chunk_metadatas.append(meta)
 
-        application_bm25_memory.upsert(
-            document_id=chunk_id,
-            document=chunk_text_value,
-            metadata=metadata
-        )
+    # 1. Bulk vector ingestion (uses batch_encode for single forward-pass)
+    application_semantic_memory.bulk_add_memories(
+        memory_ids=chunk_ids,
+        documents=chunk_docs,
+        metadatas=chunk_metadatas,
+        source=role,
+        memory_type=memory_type,
+        session_id=session_id,
+    )
 
-        full_chunks.append({
-            "chunk_id": chunk_id,
-            "document": chunk_text_value,
-            "metadata": metadata
-        })
+    # 2. Bulk BM25 ingestion (tokenizes batch and rebuilds index once)
+    application_bm25_memory.bulk_upsert(
+        ids=chunk_ids,
+        documents=chunk_docs,
+        metadatas=chunk_metadatas,
+    )
 
-    return full_chunks
+    return [
+        {
+            "chunk_id": cid,
+            "document": doc,
+            "metadata": meta,
+        }
+        for cid, doc, meta in zip(chunk_ids, chunk_docs, chunk_metadatas)
+    ]
+
+
+def ingest_documents(
+    documents: list[dict[str, Any]],
+    application: str = "quince",
+    session_id: str | None = None,
+    memory_type: str = "short_term",
+    source: str = "context_dump",
+    extra_metadata: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Directly ingests a list of pre-formed document dicts into vector and BM25 stores.
+    Each dict must have 'text' or 'document', with optional 'id' and 'metadata'.
+    """
+    if not documents:
+        return []
+
+    application_semantic_memory = _get_vectordb_mem(application)
+    application_bm25_memory = _get_bm25_mem(application)
+
+    if session_id is None:
+        session_id = f"{application}:dump:{uuid4().hex[:8]}"
+
+    now = get_datetime()
+    ids: list[str] = []
+    texts: list[str] = []
+    metadatas: list[dict[str, Any]] = []
+
+    for i, doc_obj in enumerate(documents):
+        doc_text = doc_obj.get("text") or doc_obj.get("document", "")
+        if not doc_text:
+            continue
+
+        cid = doc_obj.get("id") or f"{session_id}:doc:{i}"
+        meta = {
+            "application": application,
+            "session_id": session_id,
+            "memory_type": memory_type,
+            "source": source,
+            "created_at": now,
+        }
+        if extra_metadata:
+            meta.update(extra_metadata)
+        if "metadata" in doc_obj and isinstance(doc_obj["metadata"], dict):
+            meta.update(doc_obj["metadata"])
+
+        ids.append(cid)
+        texts.append(doc_text)
+        metadatas.append(meta)
+
+    if not ids:
+        return []
+
+    application_semantic_memory.bulk_add_memories(
+        memory_ids=ids,
+        documents=texts,
+        metadatas=metadatas,
+        source=source,
+        memory_type=memory_type,
+        session_id=session_id,
+    )
+
+    application_bm25_memory.bulk_upsert(
+        ids=ids,
+        documents=texts,
+        metadatas=metadatas,
+    )
+
+    return [
+        {
+            "id": cid,
+            "document": txt,
+            "metadata": m,
+        }
+        for cid, txt, m in zip(ids, texts, metadatas)
+    ]
 
 
 def chunk(
@@ -104,21 +212,23 @@ def chunk(
     application: str = "quince",
     role: str = "user",
     memory_type: str = "short_term",
-    source_type: str = "conversation"
-):
-    if application == "quince":
-
-        return chunk_text(
-            text=text,
-            application=application,
-            role=role,
-            memory_type=memory_type,
-            source_type=source_type,
-            application_semantic_memory=quince_memory,
-            application_bm25_memory=quince_bm25_memory,
-            application_chats=quince_chats
-        )
-
-    raise ValueError(
-        f"Unsupported application: {application}"
+    source_type: str = "conversation",
+    session_id: str | None = None,
+    chunk_size: int = CHAT_CHUNK_SIZE,
+    chunk_overlap: int = CHAT_CHUNK_OVERLAP,
+    extra_metadata: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Unified entrypoint for chunking text for any Fruit application.
+    """
+    return chunk_text(
+        text=text,
+        application=application,
+        role=role,
+        memory_type=memory_type,
+        source_type=source_type,
+        session_id=session_id,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        extra_metadata=extra_metadata,
     )

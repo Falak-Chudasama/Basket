@@ -199,7 +199,7 @@ class ServiceManager:
                         if conn.pid:
                             try:
                                 p = psutil.Process(conn.pid)
-                                if self._matches_process(p):
+                                if self._matches_process(p, matched_by_port=True):
                                     self._write_pid_file(p.pid, p.create_time())
                                     return p
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -217,7 +217,7 @@ class ServiceManager:
 
         return None
 
-    def _matches_process(self, p: psutil.Process) -> bool:
+    def _matches_process(self, p: psutil.Process, matched_by_port: bool = False) -> bool:
         """Checks if a psutil.Process matches this service's rules."""
         try:
             name = p.name().lower()
@@ -246,12 +246,13 @@ class ServiceManager:
                     if not matched:
                         return False
                 else:
-                    # AccessDenied or empty cmdline: verify listening port
-                    if not (self.service.port and is_port_listening(self.service.host, self.service.port)):
+                    # AccessDenied or empty cmdline:
+                    # If this process was ALREADY verified to be listening on the dedicated loopback port, accept it
+                    if not matched_by_port:
                         return False
 
             # Check listening ports on the process
-            if self.service.match_ports:
+            if self.service.match_ports and not matched_by_port:
                 port_matched = False
                 try:
                     for conn in p.net_connections(kind="inet"):
@@ -282,34 +283,37 @@ class ServiceManager:
         cpu_percent = 0.0
         uptime_sec = 0
 
-        if is_running:
+        # Check port listening ground truth
+        if self.service.port:
+            is_listening = is_port_listening(self.service.host, self.service.port)
+
+        # Perform health check ground truth
+        if self.service.health_type == "http" and self.service.health_url:
+            h_ok, code, msg = verify_http_health(self.service.health_url)
+            health_ok = h_ok
+            health_message = f"HTTP {code} ({msg})" if code else msg
+            status = "healthy" if health_ok else ("degraded" if is_listening else "stopped")
+        elif self.service.health_type == "tcp" and self.service.health_port:
+            health_ok = is_port_listening(self.service.host, self.service.health_port)
+            health_message = "Port open" if health_ok else "Port not responding"
+            status = "healthy" if health_ok else "stopped"
+        elif is_running:
+            health_ok = True
+            health_message = "Process running"
+            status = "healthy"
+
+        # If network port is open or health check passes, service is definitively running
+        if health_ok or is_listening:
+            is_running = True
+
+        if proc is not None:
             pid = proc.pid
-            status = "running"
             try:
                 uptime_sec = int(time.time() - proc.create_time())
                 memory_mb = round(proc.memory_info().rss / (1024 * 1024), 1)
                 cpu_percent = round(proc.cpu_percent(interval=0.0), 1)
             except Exception:
                 pass
-
-            # Check port listening
-            if self.service.port:
-                is_listening = is_port_listening(self.service.host, self.service.port)
-
-            # Perform health check
-            if self.service.health_type == "http" and self.service.health_url:
-                h_ok, code, msg = verify_http_health(self.service.health_url)
-                health_ok = h_ok
-                health_message = f"HTTP {code} ({msg})" if code else msg
-                status = "healthy" if health_ok else "degraded"
-            elif self.service.health_type == "tcp" and self.service.health_port:
-                health_ok = is_port_listening(self.service.host, self.service.health_port)
-                health_message = "Port open" if health_ok else "Port not responding"
-                status = "healthy" if health_ok else "degraded"
-            else:
-                health_ok = True
-                health_message = "Process running"
-                status = "healthy"
 
         return {
             "id": self.service.id,
@@ -390,7 +394,8 @@ class ServiceManager:
                     time.sleep(1.2)
 
                     # Verification loop
-                    for _ in range(8):
+                    max_checks = 30 if self.service.id == "fruit-lemon" else 12
+                    for _ in range(max_checks):
                         proc = self.find_process()
                         if proc:
                             self._write_pid_file(proc.pid, proc.create_time())
@@ -429,6 +434,10 @@ class ServiceManager:
                             "message": f"Failed to start {self.service.name}: {err_msg}",
                         }
 
+                creationflags = 0
+                if sys.platform == "win32":
+                    creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+
                 log_handle = open(self.log_file, "a", encoding="utf-8")
                 proc = subprocess.Popen(
                     self.service.command,
@@ -436,6 +445,7 @@ class ServiceManager:
                     env=env,
                     stdout=log_handle,
                     stderr=subprocess.STDOUT,
+                    creationflags=creationflags,
                 )
 
                 self._write_pid_file(proc.pid, time.time())
@@ -663,6 +673,10 @@ def get_fruit_directory_data(status_map: Optional[Dict[str, Dict[str, Any]]] = N
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(urls_to_check))) as ex:
             list(ex.map(_check, urls_to_check))
+
+    for entry in results:
+        if entry.get("api_live") or (entry.get("component_details") and any(c.get("is_running") for c in entry["component_details"])):
+            entry["is_running"] = True
 
     return results
 

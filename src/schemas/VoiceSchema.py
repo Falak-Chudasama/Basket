@@ -86,12 +86,42 @@ class TextInputRequest(BaseModel):
         description="Application identifier for namespace isolation.",
     )
 
+    chat_id: str | None = Field(
+        default=None,
+        description="Unique identifier of the chat in the fruit's MongoDB chats collection.",
+    )
+
+    retrieve_chat: bool = Field(
+        default=True,
+        description="Whether to retrieve conversational context from volatile chat store.",
+    )
+
+    retrieve_notes: bool = Field(
+        default=True,
+        description="Whether to retrieve long-term knowledge from persistent notes store.",
+    )
+
     llm: VoiceLLMConfig | None = Field(
         default_factory=VoiceLLMConfig
     )
 
     tts: VoiceTTSConfig | None = Field(
         default_factory=VoiceTTSConfig
+    )
+
+    rag_top_k: int | None = Field(
+        default=None,
+        description="Dynamic number of top RAG chunks retrieved for this chat turn.",
+    )
+
+    rag_metadata_filter: dict[str, Any] | None = Field(
+        default=None,
+        description="Dynamic metadata filter applied to RAG retrieval.",
+    )
+
+    rag_use_reranker: bool = Field(
+        default=False,
+        description="Whether to execute neural cross-encoder reranking.",
     )
 
     @field_validator("text")

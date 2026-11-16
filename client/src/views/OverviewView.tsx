@@ -12,11 +12,17 @@ interface OverviewViewProps {
   isLoading?: boolean
 }
 
-// Strictly exclude Quince and Cherry per user requirements:
-// "Remove cherry too from the dashboard... sorted in this order: Plum - Kiwi - Banana - Lemon"
+// Strictly exclude Quince and Cherry per ecosystem specification:
+// Plum - Kiwi - Banana - Lemon
 const EXCLUDED_FRUITS = new Set(['quince', 'cherry'])
 const SORT_ORDER = ['plum', 'kiwi', 'banana', 'lemon']
 
+/**
+ * OverviewView — Fruit Family Design System Specification
+ *
+ * Operations Cockpit: Hardware telemetry, reverse proxy orchestration, and local applications.
+ * Typography strictly adheres to the 7-size scale (Section 2.2).
+ */
 export const OverviewView: React.FC<OverviewViewProps> = ({
   overview,
   nginxData,
@@ -32,14 +38,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     })
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
+    <div className="space-y-6 animate-page-enter">
+      {/* Page Header (PageTitle 24px / 1.5rem, Section 2.2) */}
       <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
+          <h1 className="text-pagetitle font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
             Operations & Ecosystem
           </h1>
-          <p className="mt-1 text-sm text-stone-500 dark:text-stone-400 font-sans">
+          <p className="mt-1 text-body text-stone-500 dark:text-stone-400 font-sans">
             Hardware telemetry, reverse proxy orchestration, and local applications.
           </p>
         </div>
@@ -58,16 +64,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       {/* Applications Grid: Models Card first, followed by Plum, Kiwi, Banana, Lemon */}
       <section className="pt-2">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500 font-sans">
+          <h2 className="text-micro font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500 font-sans">
             Applications
           </h2>
-          <span className="font-mono text-xs text-stone-400 dark:text-stone-500">
+          <span className="font-mono text-caption text-stone-400 dark:text-stone-500">
             {displayedFruits.filter(f => f.is_running || f.is_android_client).length} / {displayedFruits.length} Active
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
-          {/* Routine AI Models Master Card placed first before Plum */}
+          {/* Routine AI Models Master Card placed first */}
           <ModelsCard
             services={overview?.services || []}
             onMutated={onMutated}

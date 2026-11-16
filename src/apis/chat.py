@@ -24,8 +24,16 @@ async def chat_text_endpoint(request: TextInputRequest) -> Any:
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
 
+    active_chat_id = request.chat_id
+    if not active_chat_id:
+        from bson import ObjectId
+        active_chat_id = str(ObjectId())
+
     pipeline_config = VoicePipelineConfig(
         application=request.application,
+        chat_id=active_chat_id,
+        retrieve_chat=request.retrieve_chat,
+        retrieve_notes=request.retrieve_notes,
         system_prompt=request.llm.system_prompt if request.llm else None,
         model=request.llm.model if request.llm else None,
         temperature=request.llm.temperature if request.llm else 0.7,
@@ -37,6 +45,9 @@ async def chat_text_endpoint(request: TextInputRequest) -> Any:
         voice=request.tts.voice if request.tts else "jane",
         tts_temperature=request.tts.temperature if request.tts else 0.5,
         synthesize_speech=request.synthesize_speech,
+        rag_top_k=request.rag_top_k,
+        rag_metadata_filter=request.rag_metadata_filter,
+        rag_use_reranker=request.rag_use_reranker,
     )
 
     messages = list(request.llm.messages) if request.llm and request.llm.messages else []
@@ -51,7 +62,11 @@ async def chat_text_endpoint(request: TextInputRequest) -> Any:
                 if event.type == "tts.audio":
                     # Audio bytes are streamed separately or in binary
                     continue
-                yield f"data: {json.dumps({'type': event.type, 'data': event.data})}\n\n"
+                if event.type == "llm.token":
+                    yield f"event: delta\ndata: {json.dumps({'content': event.data, 'chat_id': active_chat_id})}\n\n"
+                elif event.type == "pipeline.completed":
+                    yield f"event: done\ndata: {json.dumps({'finish_reason': 'stop', 'chat_id': active_chat_id})}\n\n"
+                yield f"data: {json.dumps({'type': event.type, 'data': event.data, 'chat_id': active_chat_id})}\n\n"
         except Exception as exc:
             logger.exception("Error in /chat stream")
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Server, Search, Sparkles, Database, Box } from 'lucide-react'
 import { ServiceRow } from '../components/ServiceRow'
+import { SegmentedControl, type SegmentOption } from '../components/SegmentedControl'
 import type { ServiceStatus } from '../types/api'
 
 interface ServicesViewProps {
@@ -11,6 +12,12 @@ interface ServicesViewProps {
 
 type FilterCategory = 'all' | 'ai' | 'core' | 'fruits'
 
+/**
+ * ServicesView — Fruit Family Design System Specification
+ *
+ * Daemon and model management with SegmentedControl (Section 5.7),
+ * Text Input (Section 5.3), and ServiceRow (Section 5.5).
+ */
 export const ServicesView: React.FC<ServicesViewProps> = ({
   services,
   onMutated,
@@ -45,95 +52,63 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
   const coreCount = services.filter(isCoreMatch).length
   const fruitCount = services.filter(isFruitMatch).length
 
+  const filterOptions: SegmentOption<FilterCategory>[] = [
+    { id: 'all', label: 'All', count: services.length, icon: Server },
+    { id: 'ai', label: 'AI & Audio', count: aiCount, icon: Sparkles },
+    { id: 'core', label: 'Core', count: coreCount, icon: Database },
+    { id: 'fruits', label: 'Fruits', count: fruitCount, icon: Box },
+  ]
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 animate-page-enter">
+      {/* Header (PageTitle 24px / 1.5rem, Section 2.2) */}
       <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
+          <h1 className="text-pagetitle font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
             Services & Models
           </h1>
-          <p className="mt-1 text-sm text-stone-500 dark:text-stone-400 font-sans">
+          <p className="mt-1 text-body text-stone-500 dark:text-stone-400 font-sans">
             Low-level daemon control, llama.cpp models, STT/TTS engines, and databases.
           </p>
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Filter Segmented Control & Search Input (Section 5.7 & 5.3) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Filter Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 shrink-0" role="tablist">
-          <button
-            type="button"
-            onClick={() => setFilter('all')}
-            className={`focus-ring flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold font-sans whitespace-nowrap shrink-0 transition-all ${
-              filter === 'all'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Server className="h-3 w-3 shrink-0" />
-            <span className="whitespace-nowrap">All ({services.length})</span>
-          </button>
+        {/* Segmented Control with 300ms sliding indicator */}
+        <SegmentedControl<FilterCategory>
+          options={filterOptions}
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Service category filters"
+        />
 
-          <button
-            type="button"
-            onClick={() => setFilter('ai')}
-            className={`focus-ring flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold font-sans whitespace-nowrap shrink-0 transition-all ${
-              filter === 'ai'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Sparkles className="h-3 w-3 shrink-0" />
-            <span className="whitespace-nowrap">AI & Audio ({aiCount})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilter('core')}
-            className={`focus-ring flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold font-sans whitespace-nowrap shrink-0 transition-all ${
-              filter === 'core'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Database className="h-3 w-3 shrink-0" />
-            <span className="whitespace-nowrap">Core & DB ({coreCount})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilter('fruits')}
-            className={`focus-ring flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold font-sans whitespace-nowrap shrink-0 transition-all ${
-              filter === 'fruits'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Box className="h-3 w-3 shrink-0" />
-            <span className="whitespace-nowrap">Apps ({fruitCount})</span>
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        {/* Search Field (Section 5.3: height 44px, radius 12px, two-layer focus ring) */}
+        <div className="relative w-full sm:w-64">
+          <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search services..."
+            placeholder="Search services or ports..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-1.5 rounded-full bg-white dark:bg-[#181915] border border-black/[0.06] dark:border-white/[0.08] text-xs font-sans text-stone-800 dark:text-stone-200 outline-none focus:ring-2 focus:ring-basket-500 w-full sm:w-56 shadow-2xs"
+            className="focus-ring w-full h-[44px] pl-10 pr-4 rounded-xl glass-card text-body font-sans text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500 transition-all outline-none"
           />
         </div>
       </div>
 
-      {/* Services List */}
-      <div className="space-y-2">
+      {/* Services List Rows (Section 5.5) */}
+      <div className="space-y-2.5">
         {filteredServices.length === 0 ? (
-          <div className="p-8 text-center text-xs font-sans text-stone-400 dark:text-stone-500 rounded-2xl border border-black/[0.05] dark:border-white/[0.06] bg-white dark:bg-[#181915]">
-            No services match the selected criteria.
+          <div className="glass-card rounded-2xl p-12 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 mb-3">
+              <Server className="h-6 w-6" />
+            </div>
+            <h3 className="font-sans font-bold text-subtitle text-stone-900 dark:text-stone-100">
+              No matching services
+            </h3>
+            <p className="text-caption font-sans text-stone-500 dark:text-stone-400 mt-1 max-w-sm mx-auto">
+              No services match your active search or filter selection.
+            </p>
           </div>
         ) : (
           filteredServices.map(service => (

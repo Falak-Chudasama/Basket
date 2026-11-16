@@ -358,6 +358,32 @@ SERVICES: Dict[str, ServiceDef] = {
         shutdown_priority=42,
         is_fruit_component=True,
     ),
+
+    # ----------------------------------------------------
+    # FRUIT: LEMON
+    # ----------------------------------------------------
+    "fruit-lemon": ServiceDef(
+        id="fruit-lemon",
+        name="Lemon Desktop Activity Intelligence & DNS Firewall",
+        category="fruit",
+        fruit_id="lemon",
+        description="Local-first Windows activity intelligence engine, RFC 1035 DNS firewall, and behavioural self-control platform.",
+        work_dir=str(BASKET_ROOT / "fruits" / "lemon" / "server"),
+        command=[str(BASKET_ROOT / ".venv" / "Scripts" / "python.exe"), "run.py", "--host", "127.0.0.6", "--port", "10000"],
+        host="127.0.0.6",
+        port=10000,
+        match_exe_names=["python.exe"],
+        match_cmdline_contains=["fruits\\lemon", "run.py"],
+        match_ports=[10000],
+        task_scheduler_task="Lemon Backend",
+        health_type="http",
+        health_url="http://127.0.0.6:10000/api/v1/system/health",
+        health_port=10000,
+        dependencies=[],
+        startup_priority=45,
+        shutdown_priority=45,
+        is_fruit_component=True,
+    ),
 }
 
 # Fruits Metadata Directory
@@ -428,17 +454,17 @@ FRUITS: Dict[str, Dict[str, Any]] = {
     "lemon": {
         "id": "lemon",
         "name": "Lemon",
-        "tagline": "Quiet, Private Android Self-Control & Local DNS Workspace",
+        "tagline": "Local Windows Activity Intelligence, DNS Firewall & Behavioural Self-Control",
         "icon": "/icons/lemon-icon.svg",
-        "category": "Mobile & Security",
+        "category": "Activity & Security",
         "frontend_url": "https://lemon.jam",
         "frontend_upstream": "fruits/lemon/client/dist (Static Nginx)",
         "api_url": "https://api.lemon.jam",
         "api_upstream": "http://127.0.0.6:10000",
-        "ws_url": None,
+        "ws_url": "wss://lemon.jam/api/v1/ws/live",
         "is_redirector_enabled": True,
-        "is_android_client": True,
-        "components": [],
+        "is_android_client": False,
+        "components": ["fruit-lemon"],
     },
     "cherry": {
         "id": "cherry",

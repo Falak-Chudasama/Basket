@@ -7,10 +7,11 @@ import {
   RefreshCw,
   FileCode,
   ShieldAlert,
-  CheckCircle2,
+  Loader2,
 } from 'lucide-react'
 import { api } from '../api/client'
 import { useToast } from '../context/ToastContext'
+import { playEnter, playBack } from '../lib/sound'
 import type { NginxStatus, OverviewMetrics } from '../types/api'
 
 interface SystemCommandBarProps {
@@ -19,6 +20,12 @@ interface SystemCommandBarProps {
   onMutated: () => void
 }
 
+/**
+ * SystemCommandBar — Fruit Family Design System Specification (Section 5.1 & 2.6)
+ *
+ * Anatomy: Glass panel (.glass-panel) housing unified Edge Proxy (Nginx) controls
+ * and Master Ecosystem batch operations (Start All, Restart All, Stop All).
+ */
 export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
   nginxData,
   metrics,
@@ -34,6 +41,12 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
 
   // Nginx Actions
   const handleNginxAction = async (action: 'start' | 'stop' | 'reload' | 'validate') => {
+    if (action === 'stop') {
+      playBack()
+    } else {
+      playEnter()
+    }
+
     try {
       setOperating(`nginx-${action}`)
       if (action === 'start') {
@@ -66,6 +79,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
 
   // Master Ecosystem Actions
   const handleStartAll = async () => {
+    playEnter()
     try {
       setOperating('eco-start')
       info('Starting Ecosystem', 'Launching services in dependency order...')
@@ -81,6 +95,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
   }
 
   const handleRestartAll = async () => {
+    playEnter()
     try {
       setOperating('eco-restart')
       info('Restarting Ecosystem', 'Refreshing all services...')
@@ -97,10 +112,12 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
 
   const handleStopAll = async () => {
     if (!confirmStopAll) {
+      playBack()
       setConfirmStopAll(true)
       setTimeout(() => setConfirmStopAll(false), 5000)
       return
     }
+    playBack()
     try {
       setOperating('eco-stop')
       setConfirmStopAll(false)
@@ -116,24 +133,24 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
   }
 
   return (
-    <div className="rounded-2xl border border-black/[0.06] dark:border-white/[0.08] bg-white dark:bg-[#181915] p-4 shadow-soft transition-colors">
+    <div className="glass-panel rounded-2xl p-4 shadow-soft transition-colors">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Nginx Section */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 shrink-0">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 shrink-0">
-              <Globe className="h-4 w-4 text-basket-500 shrink-0" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 shadow-xs shrink-0">
+              <Globe className="h-4 w-4 text-basket-DEFAULT dark:text-basket-200 shrink-0" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-sans font-bold text-sm text-stone-900 dark:text-stone-100 whitespace-nowrap shrink-0">
+                <span className="font-sans font-bold text-body text-stone-900 dark:text-stone-100 whitespace-nowrap shrink-0">
                   Nginx Edge
                 </span>
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold whitespace-nowrap shrink-0 ${
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-micro font-mono font-bold whitespace-nowrap shrink-0 ${
                     isNginxRunning
                       ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400'
+                      : 'bg-stone-200/50 dark:bg-stone-800 text-stone-500 dark:text-stone-400'
                   }`}
                 >
                   <span
@@ -144,13 +161,13 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
                   <span className="whitespace-nowrap">{isNginxRunning ? 'Active' : 'Stopped'}</span>
                 </span>
               </div>
-              <span className="font-mono text-[11px] text-stone-400 dark:text-stone-500 whitespace-nowrap block">
+              <span className="font-mono text-micro text-stone-400 dark:text-stone-500 whitespace-nowrap block">
                 Ports: {p80 ? '80' : 'off'} • {p443 ? '443 (SSL)' : 'off'}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1 sm:ml-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:ml-2 shrink-0">
             {isNginxRunning ? (
               <>
                 <button
@@ -158,10 +175,10 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
                   onClick={() => handleNginxAction('reload')}
                   disabled={operating !== null}
                   title="Reload Nginx configuration (zero downtime)"
-                  className="focus-ring flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition disabled:opacity-50 whitespace-nowrap shrink-0"
+                  className="focus-ring btn-interactive flex items-center gap-1 min-h-[38px] rounded-full px-3 py-1.5 text-caption font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition disabled:opacity-50 whitespace-nowrap shrink-0"
                 >
                   <RefreshCw
-                    className={`h-3.5 w-3.5 shrink-0 ${operating === 'nginx-reload' ? 'animate-spin text-basket-500' : ''}`}
+                    className={`h-3.5 w-3.5 shrink-0 ${operating === 'nginx-reload' ? 'animate-spin text-basket-DEFAULT dark:text-basket-200' : ''}`}
                   />
                   <span className="whitespace-nowrap">Reload</span>
                 </button>
@@ -170,7 +187,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
                   onClick={() => handleNginxAction('stop')}
                   disabled={operating !== null}
                   title="Stop Nginx process"
-                  className="focus-ring flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition disabled:opacity-50 whitespace-nowrap shrink-0"
+                  className="focus-ring btn-interactive flex items-center gap-1 min-h-[38px] rounded-full px-3 py-1.5 text-caption font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition disabled:opacity-50 whitespace-nowrap shrink-0"
                 >
                   <Square className="h-3 w-3 fill-current shrink-0" />
                   <span className="whitespace-nowrap">Stop</span>
@@ -181,7 +198,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
                 type="button"
                 onClick={() => handleNginxAction('start')}
                 disabled={operating !== null}
-                className="focus-ring flex items-center gap-1 rounded-xl bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 px-3 py-1.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="focus-ring btn-glass-primary flex items-center gap-1.5 min-h-[38px] px-4 py-1.5 text-caption font-bold transition disabled:opacity-50 whitespace-nowrap shrink-0"
               >
                 <Play className="h-3 w-3 fill-current shrink-0" />
                 <span className="whitespace-nowrap">Start</span>
@@ -193,7 +210,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
               onClick={() => handleNginxAction('validate')}
               disabled={operating !== null}
               title="Validate Nginx configuration syntax (nginx -t)"
-              className="focus-ring flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition disabled:opacity-50 whitespace-nowrap shrink-0"
+              className="focus-ring btn-interactive flex items-center gap-1 min-h-[38px] rounded-full px-3 py-1.5 text-caption font-semibold text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition disabled:opacity-50 whitespace-nowrap shrink-0"
             >
               <FileCode className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden sm:inline whitespace-nowrap">Test Config</span>
@@ -204,7 +221,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
         {/* Master Control Section */}
         <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 pt-3 lg:pt-0 border-t lg:border-t-0 border-black/[0.04] dark:border-white/[0.05] shrink-0">
           {metrics && (
-            <div className="flex items-center gap-1.5 text-xs font-mono text-stone-500 dark:text-stone-400 whitespace-nowrap shrink-0">
+            <div className="flex items-center gap-1.5 text-caption font-mono text-stone-500 dark:text-stone-400 whitespace-nowrap shrink-0">
               <span className="font-semibold text-stone-900 dark:text-stone-100">
                 {metrics.running_services}/{metrics.total_services}
               </span>
@@ -222,11 +239,14 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
               type="button"
               onClick={handleStartAll}
               disabled={operating !== null}
-              className="focus-ring flex items-center gap-1 rounded-xl bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 px-3 py-1.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50 whitespace-nowrap shrink-0"
+              className="focus-ring btn-glass-primary flex items-center gap-2 min-h-[40px] px-4 py-2 text-caption font-bold tracking-tight transition disabled:opacity-50 whitespace-nowrap shrink-0"
+              title="Start all ecosystem services"
             >
-              <Play
-                className={`h-3 w-3 fill-current shrink-0 ${operating === 'eco-start' ? 'animate-spin' : ''}`}
-              />
+              {operating === 'eco-start' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+              ) : (
+                <Play className="h-3.5 w-3.5 fill-current shrink-0" />
+              )}
               <span className="whitespace-nowrap">Start All</span>
             </button>
 
@@ -234,10 +254,10 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
               type="button"
               onClick={handleRestartAll}
               disabled={operating !== null}
-              className="focus-ring flex items-center gap-1 rounded-xl border border-black/[0.08] dark:border-white/[0.08] bg-white dark:bg-[#181915] text-stone-800 dark:text-stone-200 px-3 py-1.5 text-xs font-semibold hover:bg-stone-50 dark:hover:bg-stone-800 transition disabled:opacity-50 whitespace-nowrap shrink-0"
+              className="focus-ring btn-glass-secondary flex items-center gap-1.5 min-h-[38px] px-4 py-1.5 text-caption font-semibold transition disabled:opacity-50 whitespace-nowrap shrink-0"
             >
               <RotateCw
-                className={`h-3 w-3 shrink-0 ${operating === 'eco-restart' ? 'animate-spin text-basket-500' : ''}`}
+                className={`h-3 w-3 shrink-0 ${operating === 'eco-restart' ? 'animate-spin text-basket-DEFAULT dark:text-basket-200' : ''}`}
               />
               <span className="whitespace-nowrap">Restart All</span>
             </button>
@@ -248,7 +268,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
                   type="button"
                   onClick={handleStopAll}
                   disabled={operating !== null}
-                  className="focus-ring flex items-center gap-1 rounded-xl bg-rose-600 text-white px-3 py-1.5 text-xs font-bold transition hover:bg-rose-700 whitespace-nowrap shrink-0"
+                  className="focus-ring btn-interactive flex items-center gap-1.5 min-h-[38px] rounded-full bg-rose-600 text-white px-3.5 py-1.5 text-caption font-bold transition hover:bg-rose-700 whitespace-nowrap shrink-0"
                 >
                   <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
                   <span className="whitespace-nowrap">Confirm Stop?</span>
@@ -256,7 +276,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
                 <button
                   type="button"
                   onClick={() => setConfirmStopAll(false)}
-                  className="rounded-xl px-2 py-1.5 text-xs text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 whitespace-nowrap shrink-0"
+                  className="btn-interactive min-h-[38px] rounded-full px-2.5 py-1.5 text-caption text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 whitespace-nowrap shrink-0"
                 >
                   Cancel
                 </button>
@@ -266,7 +286,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
                 type="button"
                 onClick={handleStopAll}
                 disabled={operating !== null}
-                className="focus-ring flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-medium text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="focus-ring btn-interactive flex items-center gap-1 min-h-[38px] rounded-full px-3 py-1.5 text-caption font-medium text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition disabled:opacity-50 whitespace-nowrap shrink-0"
               >
                 <Square className="h-3 w-3 fill-current shrink-0" />
                 <span className="whitespace-nowrap">Stop All</span>
@@ -278,4 +298,3 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
     </div>
   )
 }
-

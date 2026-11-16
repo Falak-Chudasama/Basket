@@ -555,7 +555,7 @@ async def start_fruit_endpoint(fruit_id: str):
 
     fruit = FRUITS[fruit_id]
     if fruit.get("is_android_client"):
-        return {"success": True, "message": "Lemon is an Android client. No background Windows daemon to start."}
+        return {"success": True, "message": f"{fruit.get('name', fruit_id)} is an Android client (APK)."}
 
     results = {}
     overall = True
@@ -577,7 +577,7 @@ async def end_fruit_endpoint(fruit_id: str):
 
     fruit = FRUITS[fruit_id]
     if fruit.get("is_android_client"):
-        return {"success": True, "message": "Lemon is an Android client."}
+        return {"success": True, "message": f"{fruit.get('name', fruit_id)} is an Android client."}
 
     results = {}
     overall = True
@@ -599,7 +599,7 @@ async def restart_fruit_endpoint(fruit_id: str):
 
     fruit = FRUITS[fruit_id]
     if fruit.get("is_android_client"):
-        return {"success": True, "message": "Lemon is an Android client."}
+        return {"success": True, "message": f"{fruit.get('name', fruit_id)} is an Android client."}
 
     results = {}
     overall = True

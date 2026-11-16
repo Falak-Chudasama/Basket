@@ -44,17 +44,28 @@
 
   body {
     background-color: #F8F9F5;
-    color: #1A1A1A;
+    color: #1C1917;
     min-height: 100vh;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.22s cubic-bezier(0.16, 1, 0.3, 1), color 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    /* Subtle Ambient Canvas Background with Flat Orange Tints */
+    background-image: 
+      radial-gradient(circle at 15% 15%, rgba(249, 115, 22, 0.04) 0px, transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(249, 115, 22, 0.03) 0px, transparent 50%),
+      radial-gradient(circle at 85% 15%, rgba(249, 115, 22, 0.02) 0px, transparent 45%);
+    background-attachment: fixed;
   }
 
   html.dark body {
     background-color: #121310;
     color: #F3F4F1;
+    background-image: 
+      radial-gradient(circle at 15% 15%, rgba(249, 115, 22, 0.04) 0px, transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(249, 115, 22, 0.035) 0px, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(249, 115, 22, 0.025) 0px, transparent 45%);
+    background-attachment: fixed;
   }
 
-  /* Unbounded is strictly display-only for brand wordmarks and large hero numbers */
+  /* Unbounded is strictly display-only for brand wordmarks and large hero numbers (DESIGN.md Section 2.2) */
   .font-display {
     font-family: 'Unbounded', sans-serif;
     letter-spacing: -0.03em;
@@ -65,56 +76,180 @@
   }
 }
 
-/* --- Glass Material System (from Kiwi spec) --- */
+/* --- Apple-Grade Optical Glass Material System (DESIGN.md Section 2.6) --- */
 
 @layer components {
+  /* Tier 1: Glass Capsule (Navigation capsule, floating bottom bar, segmented pill container) */
   .glass-capsule {
-    background: rgba(255, 255, 255, 0.82);
+    background: rgba(255, 255, 255, 0.20);
     border: 1px solid rgba(0, 0, 0, 0.07);
-    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    -webkit-backdrop-filter: blur(15px);
+    backdrop-filter: blur(15px);
   }
 
   html.dark .glass-capsule {
-    background: rgba(24, 25, 21, 0.88);
+    background: rgba(24, 25, 21, 0.20);
     border: 1px solid rgba(255, 255, 255, 0.09);
-    box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.45), 0 2px 8px -1px rgba(0, 0, 0, 0.3);
+    -webkit-backdrop-filter: blur(15px);
+    backdrop-filter: blur(15px);
   }
 
+  /* Tier 2: Glass Panel (Header shells, modals, system command bars, floating overlays) */
   .glass-panel {
-    background: rgba(255, 255, 255, 0.85);
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+    background: rgba(255, 255, 255, 0.38);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.7), 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    backdrop-filter: blur(12px) saturate(160%);
   }
 
   html.dark .glass-panel {
-    background: rgba(24, 25, 21, 0.85);
+    background: rgba(22, 23, 19, 0.40);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.08), 0 4px 20px -2px rgba(0, 0, 0, 0.25);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    backdrop-filter: blur(12px) saturate(160%);
+  }
+
+  /* Tier 3: Glass Card (Dashboard cards, list rows, interactive tiles) */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.50);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.5), 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    backdrop-filter: blur(10px) saturate(150%);
+  }
+
+  html.dark .glass-card {
+    background: rgba(22, 23, 19, 0.34);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 4px 20px -2px rgba(0, 0, 0, 0.25);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    backdrop-filter: blur(10px) saturate(150%);
   }
 
-  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-    .glass-capsule {
-      -webkit-backdrop-filter: blur(16px);
-      backdrop-filter: blur(16px);
+  /* Optical Glass Fallback for platforms without backdrop-filter */
+  @supports not (backdrop-filter: blur(1px)) {
+    .glass-capsule, .glass-panel, .glass-card {
+      background: #FFFFFF !important;
     }
-    .glass-panel {
-      -webkit-backdrop-filter: blur(16px);
-      backdrop-filter: blur(16px);
+    html.dark .glass-capsule, html.dark .glass-panel, html.dark .glass-card {
+      background: #181915 !important;
     }
   }
 
+  /* Two-Layer High-Visibility Focus Ring with Flat Orange Accent */
   .focus-ring {
     outline: none;
   }
   .focus-ring:focus-visible {
-    box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px #0DAA26;
+    box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px #F97316;
   }
   html.dark .focus-ring:focus-visible {
-    box-shadow: 0 0 0 2px #181915, 0 0 0 4px #84DD00;
+    box-shadow: 0 0 0 2px #181915, 0 0 0 4px #FB923C;
+  }
+
+  /* Tactile Interactive Micro-Transforms (DESIGN.md Section 2.9) */
+  .btn-interactive {
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
+  }
+  .btn-interactive:hover {
+    transform: translateY(-1px) scale(1.015);
+  }
+  .btn-interactive:active {
+    transform: translateY(0.5px) scale(0.985);
+  }
+
+  /* Primary Button: Strictly Flat Vibrant Orange (Zero gradients, zero shadows, zero borders, completely flat) */
+  .btn-glass-primary {
+    background: #F97316 !important;
+    background-color: #F97316 !important;
+    background-image: none !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 9999px;
+    font-weight: 700;
+    transform: none !important;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+  }
+  .btn-glass-primary:hover {
+    background: #EA580C !important;
+    background-color: #EA580C !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+  .btn-glass-primary:active {
+    background: #C2410C !important;
+    background-color: #C2410C !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+  html.dark .btn-glass-primary {
+    background: #F97316 !important;
+    background-color: #F97316 !important;
+    background-image: none !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+  html.dark .btn-glass-primary:hover {
+    background: #EA580C !important;
+    background-color: #EA580C !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+  html.dark .btn-glass-primary:active {
+    background: #C2410C !important;
+    background-color: #C2410C !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+
+  /* Secondary Button: Clean Flat Neutral (No gradients, no shadows) */
+  .btn-glass-secondary {
+    background-color: #E7E5E4;
+    color: #1C1917;
+    border: none;
+    box-shadow: none;
+    border-radius: 9999px;
+    font-weight: 600;
+    transition: background-color 0.15s ease;
+  }
+  .btn-glass-secondary:hover {
+    background-color: #D6D3D1;
+    transform: none;
+    box-shadow: none;
+  }
+  .btn-glass-secondary:active {
+    background-color: #A8A29E;
+    transform: none;
+    box-shadow: none;
+  }
+  html.dark .btn-glass-secondary {
+    background-color: #292524;
+    color: #F3F4F1;
+    border: none;
+    box-shadow: none;
+  }
+  html.dark .btn-glass-secondary:hover {
+    background-color: #3C3633;
+    transform: none;
+    box-shadow: none;
+  }
+  html.dark .btn-glass-secondary:active {
+    background-color: #1C1917;
+    transform: none;
+    box-shadow: none;
   }
 }
 
-/* Minimal scrollbars */
+/* Minimal Scrollbars */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -140,4 +275,16 @@ html.dark ::-webkit-scrollbar-thumb {
 
 html.dark ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.28);
+}
+
+/* Reduced Motion Policy (DESIGN.md Section 2.9) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

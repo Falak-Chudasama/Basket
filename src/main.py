@@ -1,8 +1,17 @@
+import sys
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from src.apis.llm import llmRouter
+from src.apis.llm import llmRouter, completion_endpoint
 from src.apis.stt import sttRouter
 from src.apis.tts import ttsRouter
 from src.apis.context import context_router
@@ -72,6 +81,9 @@ app.include_router(context_router)
 app.include_router(chatRouter)
 app.include_router(authRouter)
 app.include_router(wsRouter)
+
+# Direct root-level completion alias
+app.post("/completion", tags=["LLM"])(completion_endpoint)
 
 # TODO: Remove this and keep "Serving Fruits!"
 from src.clients.quince_mcp import quince_mcp

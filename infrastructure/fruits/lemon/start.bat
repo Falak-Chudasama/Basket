@@ -9,7 +9,7 @@ if not exist "%PYTHON_EXE%" (
 
 echo.
 echo ============================================================
-echo   BASKET OPERATIONS: START LEMON ANDROID CLIENT
+echo   BASKET OPERATIONS: START LEMON DESKTOP BACKEND
 echo ============================================================
 echo.
 
