@@ -16,6 +16,22 @@ set "BASKET_DB_PORT=10000"
 set "BASKET_CONTROL_PORT=10020"
 
 REM ============================================================
+REM  FRUITS ECOSYSTEM
+REM ============================================================
+set "PLUM_HOST=127.0.0.2"
+set "PLUM_PORT=10000"
+set "KIWI_HOST=127.0.0.3"
+set "KIWI_PORT=10000"
+set "BANANA_HOST=127.0.0.4"
+set "BANANA_PORT=10000"
+set "QUINCE_HOST=127.0.0.5"
+set "QUINCE_PORT=10000"
+set "LEMON_HOST=127.0.0.6"
+set "LEMON_PORT=10000"
+set "CHERRY_HOST=127.0.0.7"
+set "CHERRY_PORT=10000"
+
+REM ============================================================
 REM  HOST
 REM ============================================================
 set "HOST=127.0.0.1"

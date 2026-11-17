@@ -57,7 +57,7 @@ Thumbs.db
 .gradle/
 build/
 # Fruits Ecosystem Repositories & Sub-directories
-fruits/
-fruits/*
+/fruits/
+!infrastructure/fruits/
 
 assets/typefaces

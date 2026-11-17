@@ -12,10 +12,10 @@ interface OverviewViewProps {
   isLoading?: boolean
 }
 
-// Strictly exclude Quince and Cherry per ecosystem specification:
-// Plum - Kiwi - Banana - Lemon
-const EXCLUDED_FRUITS = new Set(['quince', 'cherry'])
-const SORT_ORDER = ['plum', 'kiwi', 'banana', 'lemon']
+// Quince is the background system voice runtime & MCP server (handled in ServicesView)
+// Applications Grid: Plum - Kiwi - Banana - Lemon - Cherry
+const EXCLUDED_FRUITS = new Set(['quince'])
+const SORT_ORDER = ['plum', 'kiwi', 'banana', 'lemon', 'cherry']
 
 /**
  * OverviewView — Fruit Family Design System Specification
@@ -61,7 +61,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         onMutated={onMutated}
       />
 
-      {/* Applications Grid: Models Card first, followed by Plum, Kiwi, Banana, Lemon */}
+      {/* Applications Grid: Models Card first, followed by Plum, Kiwi, Banana, Lemon, Cherry */}
       <section className="pt-2">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-micro font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500 font-sans">

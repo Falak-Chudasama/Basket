@@ -384,6 +384,32 @@ SERVICES: Dict[str, ServiceDef] = {
         shutdown_priority=45,
         is_fruit_component=True,
     ),
+
+    # ----------------------------------------------------
+    # FRUIT: CHERRY
+    # ----------------------------------------------------
+    "fruit-cherry": ServiceDef(
+        id="fruit-cherry",
+        name="Cherry Productivity & Accountability Engine",
+        category="fruit",
+        fruit_id="cherry",
+        description="Local personal productivity, calendar scheduling, focus management, and habit accountability server.",
+        work_dir=str(BASKET_ROOT / "fruits" / "cherry" / "server"),
+        command=[str(BASKET_ROOT / ".venv" / "Scripts" / "python.exe"), "run.py", "--host", "127.0.0.7", "--port", "10000"],
+        host="127.0.0.7",
+        port=10000,
+        match_exe_names=["python.exe"],
+        match_cmdline_contains=["fruits\\cherry", "run.py"],
+        match_ports=[10000],
+        task_scheduler_task="Cherry Backend",
+        health_type="http",
+        health_url="http://127.0.0.7:10000/api/system/health",
+        health_port=10000,
+        dependencies=["mongodb", "basket-api"],
+        startup_priority=47,
+        shutdown_priority=43,
+        is_fruit_component=True,
+    ),
 }
 
 # Fruits Metadata Directory
@@ -469,9 +495,9 @@ FRUITS: Dict[str, Dict[str, Any]] = {
     "cherry": {
         "id": "cherry",
         "name": "Cherry",
-        "tagline": "Ecosystem Workspace Module",
-        "icon": "/icons/basket-icon.svg",
-        "category": "Modular Project",
+        "tagline": "Personal Productivity, Calendar & Habit Accountability Platform",
+        "icon": "/icons/cherry-icon.svg",
+        "category": "Productivity & Habits",
         "frontend_url": "https://cherry.jam",
         "frontend_upstream": "fruits/cherry/client/dist (Static Nginx)",
         "api_url": "https://api.cherry.jam",
@@ -479,7 +505,7 @@ FRUITS: Dict[str, Dict[str, Any]] = {
         "ws_url": None,
         "is_redirector_enabled": True,
         "is_android_client": False,
-        "components": [],
+        "components": ["fruit-cherry"],
     },
 }
 

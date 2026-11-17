@@ -192,18 +192,40 @@ class ServiceManager:
         # 2. Match by listening ports first (most reliable for network servers)
         if self.service.match_ports:
             for port in self.service.match_ports:
-                for conn in psutil.net_connections(kind="inet"):
-                    if conn.status == psutil.CONN_LISTEN and conn.laddr and conn.laddr.port == port:
-                        if self.service.host and conn.laddr.ip not in ("0.0.0.0", "::", self.service.host):
-                            continue
-                        if conn.pid:
-                            try:
-                                p = psutil.Process(conn.pid)
-                                if self._matches_process(p, matched_by_port=True):
-                                    self._write_pid_file(p.pid, p.create_time())
-                                    return p
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                pass
+                try:
+                    for conn in psutil.net_connections(kind="inet"):
+                        if conn.status == psutil.CONN_LISTEN and conn.laddr and conn.laddr.port == port:
+                            if self.service.host and conn.laddr.ip not in ("0.0.0.0", "::", self.service.host):
+                                continue
+                            if conn.pid:
+                                try:
+                                    p = psutil.Process(conn.pid)
+                                    if self._matches_process(p, matched_by_port=True):
+                                        self._write_pid_file(p.pid, p.create_time())
+                                        return p
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
+                except Exception:
+                    pass
+
+                # Windows netstat fallback for cross-session elevation boundaries
+                if sys.platform == "win32":
+                    try:
+                        target = f"{self.service.host}:{port}" if self.service.host else f":{port}"
+                        out = subprocess.check_output(f'netstat -ano | findstr "{target}"', shell=True, text=True, stderr=subprocess.DEVNULL)
+                        for line in out.strip().splitlines():
+                            parts = line.split()
+                            if len(parts) >= 5 and parts[1].endswith(f":{port}") and parts[3] == "LISTENING":
+                                p_pid = int(parts[4])
+                                try:
+                                    p = psutil.Process(p_pid)
+                                    if self._matches_process(p, matched_by_port=True):
+                                        self._write_pid_file(p.pid, p.create_time())
+                                        return p
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
+                    except Exception:
+                        pass
 
         # 3. Scan running processes by exe name and commandline
         procs = proc_snapshot if proc_snapshot is not None else psutil.process_iter(["pid", "name", "cmdline", "create_time"])
@@ -394,34 +416,39 @@ class ServiceManager:
                     time.sleep(1.2)
 
                     # Verification loop
-                    max_checks = 30 if self.service.id == "fruit-lemon" else 12
+                    max_checks = 30 if self.service.id in ("fruit-lemon", "fruit-cherry") else 12
                     for _ in range(max_checks):
                         proc = self.find_process()
-                        if proc:
-                            self._write_pid_file(proc.pid, proc.create_time())
-                            if not self.service.port or is_port_listening(self.service.host, self.service.port):
-                                dur = int((time.time() - start_time) * 1000)
-                                record_operation(self.service.id, "start", "success", dur)
-                                return {
-                                    "success": True,
-                                    "action": "start",
-                                    "status": "started",
-                                    "pid": proc.pid,
-                                    "message": f"Successfully started {self.service.name} (PID {proc.pid}).",
-                                }
+                        is_listening = self.service.port and is_port_listening(self.service.host, self.service.port)
+                        if proc or is_listening:
+                            pid = proc.pid if proc else None
+                            if proc:
+                                self._write_pid_file(proc.pid, proc.create_time())
+                            dur = int((time.time() - start_time) * 1000)
+                            record_operation(self.service.id, "start", "success", dur)
+                            return {
+                                "success": True,
+                                "action": "start",
+                                "status": "started",
+                                "pid": pid,
+                                "message": f"Successfully started {self.service.name}" + (f" (PID {pid})." if pid else "."),
+                            }
                         time.sleep(0.5)
 
                     proc = self.find_process()
-                    if proc:
-                        self._write_pid_file(proc.pid, proc.create_time())
+                    is_listening = self.service.port and is_port_listening(self.service.host, self.service.port)
+                    if proc or is_listening:
+                        pid = proc.pid if proc else None
+                        if proc:
+                            self._write_pid_file(proc.pid, proc.create_time())
                         dur = int((time.time() - start_time) * 1000)
                         record_operation(self.service.id, "start", "success", dur)
                         return {
                             "success": True,
                             "action": "start",
                             "status": "started",
-                            "pid": proc.pid,
-                            "message": f"Successfully started {self.service.name} (PID {proc.pid}).",
+                            "pid": pid,
+                            "message": f"Successfully started {self.service.name}" + (f" (PID {pid})." if pid else "."),
                         }
                     else:
                         dur = int((time.time() - start_time) * 1000)

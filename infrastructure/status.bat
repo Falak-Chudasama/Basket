@@ -103,6 +103,41 @@ echo.
 
 
 REM ============================================================
+REM  FRUITS ECOSYSTEM
+REM ============================================================
+
+echo [Fruit - Plum]
+powershell -NoProfile -Command ^
+    "$r=Test-NetConnection '%PLUM_HOST%' -Port %PLUM_PORT% -WarningAction SilentlyContinue; ^
+    if($r.TcpTestSucceeded){Write-Host 'ONLINE'}else{Write-Host 'OFFLINE'}"
+echo.
+
+echo [Fruit - Kiwi]
+powershell -NoProfile -Command ^
+    "$r=Test-NetConnection '%KIWI_HOST%' -Port %KIWI_PORT% -WarningAction SilentlyContinue; ^
+    if($r.TcpTestSucceeded){Write-Host 'ONLINE'}else{Write-Host 'OFFLINE'}"
+echo.
+
+echo [Fruit - Banana]
+powershell -NoProfile -Command ^
+    "$r=Test-NetConnection '%BANANA_HOST%' -Port %BANANA_PORT% -WarningAction SilentlyContinue; ^
+    if($r.TcpTestSucceeded){Write-Host 'ONLINE'}else{Write-Host 'OFFLINE'}"
+echo.
+
+echo [Fruit - Lemon]
+powershell -NoProfile -Command ^
+    "$r=Test-NetConnection '%LEMON_HOST%' -Port %LEMON_PORT% -WarningAction SilentlyContinue; ^
+    if($r.TcpTestSucceeded){Write-Host 'ONLINE'}else{Write-Host 'OFFLINE'}"
+echo.
+
+echo [Fruit - Cherry]
+powershell -NoProfile -Command ^
+    "$r=Test-NetConnection '%CHERRY_HOST%' -Port %CHERRY_PORT% -WarningAction SilentlyContinue; ^
+    if($r.TcpTestSucceeded){Write-Host 'ONLINE'}else{Write-Host 'OFFLINE'}"
+echo.
+
+
+REM ============================================================
 REM  SUMMARY
 REM ============================================================
 
@@ -121,6 +156,11 @@ echo     TTS        : %TTS_PORT%
 echo     SearXNG    : %SEARXNG_PORT%
 echo     MongoDB    : %BASKET_DB_PORT%
 echo     Nginx      : 80
+echo     Plum       : %PLUM_PORT% (%PLUM_HOST%)
+echo     Kiwi       : %KIWI_PORT% (%KIWI_HOST%)
+echo     Banana     : %BANANA_PORT% (%BANANA_HOST%)
+echo     Lemon      : %LEMON_PORT% (%LEMON_HOST%)
+echo     Cherry     : %CHERRY_PORT% (%CHERRY_HOST%)
 
 echo.
 echo ==========================================
