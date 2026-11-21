@@ -113,7 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Primary Desktop Navigation Tabs with Sliding Active Pill (Section 5.6) */}
         <nav
           ref={navContainerRef}
-          className="hidden sm:flex relative items-center p-1 rounded-full bg-stone-200/40 dark:bg-stone-800/40 shrink-0"
+          className="hidden sm:flex relative items-center p-1 rounded-full bg-transparent shrink-0"
           aria-label="Dashboard Navigation"
         >
           {/* Sliding Pill Indicator (300ms cubic-bezier(0.2, 0.8, 0.2, 1)) */}
