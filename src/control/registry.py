@@ -154,7 +154,7 @@ SERVICES: Dict[str, ServiceDef] = {
         work_dir=r"C:\llama-cuda",
         command=[
             r"C:\llama-cuda\llama-server.exe",
-            "-m", r"C:\Users\ADMIN\models\Qwen3.5-4B-Q4_K_M\Qwen3.5-4B.Q4_K_M.gguf",
+            "-m", r"C:\Users\ADMIN\models\Qwen3.5-4B-Q4_K_M\Qwen3.5-4B-Q4_K_M.gguf",
             "--mmproj", r"C:\Users\ADMIN\models\Qwen3.5-4B-Q4_K_M\mmproj-Qwen3.5-4B-BF16.gguf",
             "--alias", "quince-llm",
             "--host", "127.0.0.1",

@@ -6,13 +6,13 @@
   <link rel="icon" type="image/svg+xml" href="/icons/basket-icon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Basket</title>
-  <!-- Zero-flash theme initialization script -->
+  <!-- Zero-flash theme initialization script (6am-7pm light, 7pm-6am dark) -->
   <script>
     (function () {
       try {
-        var saved = localStorage.getItem('basket_theme');
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (saved === 'dark' || (!saved && prefersDark)) {
+        var hour = new Date().getHours();
+        var isDark = (hour >= 19 || hour < 6);
+        if (isDark) {
           document.documentElement.classList.add('dark');
         } else {
           document.documentElement.classList.remove('dark');

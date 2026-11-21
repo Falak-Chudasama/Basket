@@ -57,7 +57,7 @@ set "LLAMA_CUDA_EXE=C:\llama-cuda\llama-server.exe"
 REM ============================================================
 REM  QUINCE LLM
 REM ============================================================
-set "LLM_MODEL=C:\Users\ADMIN\models\Qwen3.5-4B-Q4_K_M\Qwen3.5-4B.Q4_K_M.gguf"
+set "LLM_MODEL=C:\Users\ADMIN\models\Qwen3.5-4B-Q4_K_M\Qwen3.5-4B-Q4_K_M.gguf"
 set "LLM_MMPROJ=C:\Users\ADMIN\models\Qwen3.5-4B-Q4_K_M\mmproj-Qwen3.5-4B-BF16.gguf"
 set "LLM_MODEL_ID=quince-llm"
 REM 16,000 token context.
