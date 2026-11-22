@@ -556,7 +556,10 @@ class ServiceManager:
 
             # 2. Process tree termination
             try:
-                children = proc.children(recursive=True)
+                try:
+                    children = proc.children(recursive=True)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    children = []
                 all_procs = children + [proc]
 
                 # Graceful termination first
@@ -573,7 +576,11 @@ class ServiceManager:
                     try:
                         p.kill()
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
+                        try:
+                            if sys.platform == "win32":
+                                subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True, timeout=2)
+                        except Exception:
+                            pass
 
                 self._clear_pid_file()
 
