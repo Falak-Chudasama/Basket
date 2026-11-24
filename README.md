@@ -1,295 +1,575 @@
 <div align="center">
-  <img src="client/public/icons/basket-icon.svg" alt="Basket Icon" width="120" height="120" />
+
+  <img src="client/public/icons/basket-icon.svg" alt="Basket Logo" width="96" height="96" />
 
   # Basket
 
-  **Complete Local Operations Control Center & Fruits Ecosystem Operations Dashboard**
+  **The Central Operations Cockpit, Real-Time AI Inference Hub & Context Engine for the Fruits Ecosystem.**
 
-  *The central nervous system and unified operations cockpit for the Fruits ecosystem. Eliminates manual terminal operations by providing independent instance management, one-click aggregate workflows, live Azeret Mono log streaming, real reverse-proxy route monitoring, and Windows Task Scheduler integration.*
-
-  <br />
-
-  [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-  [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react)](https://react.dev/)
-  [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
-  [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
-  [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python)](https://python.org/)
-  [![Nginx](https://img.shields.io/badge/Proxy-Nginx_1.28-009639?style=flat-square&logo=nginx)](https://nginx.org/)
-  [![Zero Cloud](https://img.shields.io/badge/Privacy-100%25_Local--First-amber?style=flat-square)](#-backend-security--local-first-guarantee)
-  [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
-
-  <br />
+  A high-performance, local-first control plane orchestrating distributed AI runtimes, multi-tenant hybrid RAG, sub-second streaming voice synthesis, isolated loopback networking, and verifiable process trees.
 
   <p align="center">
-    <a href="#-overview">Overview</a> •
-    <a href="#-architecture--dashboard-urls">Dashboard URLs</a> •
-    <a href="#-central-service-registry">Service Registry</a> •
-    <a href="#-management-scripts-bat-system">BAT Scripts</a> •
-    <a href="#-fruits-ecosystem-directory">Fruits Ecosystem</a> •
-    <a href="#-nginx-reverse-proxy-routes">Nginx & Routes</a> •
-    <a href="#-windows-task-scheduler--logging">Task Scheduler & Logs</a> •
-    <a href="#-getting-started">Getting Started</a>
+    <a href="#core-architectures"><img src="https://img.shields.io/badge/Local--First-100%25%20Offline-22c55e?style=for-the-badge&logo=shield" alt="Local-First Offline" /></a>
+    <a href="#architecture-1-3-tier-context--knowledge-engine"><img src="https://img.shields.io/badge/Context%20Engine-3--Tier%20Lifecycle-DF8A2D?style=for-the-badge&logo=probot" alt="3-Tier Context Engine" /></a>
+    <a href="#architecture-2-hybrid-rag--reciprocal-rank-fusion-rrf"><img src="https://img.shields.io/badge/RAG-Hybrid%20RRF%20(k=60)-6366f1?style=for-the-badge&logo=apache" alt="Hybrid RRF Search" /></a>
+    <a href="#architecture-3-sub-second-streaming-voice--agentic-pipeline"><img src="https://img.shields.io/badge/Voice%20AI-24kHz%20PCM%20Stream-f43f5e?style=for-the-badge&logo=audio-technica" alt="Streaming Voice Pipeline" /></a>
+    <a href="#getting-started"><img src="https://img.shields.io/badge/FastAPI-Python%203.10%2B-009688?style=for-the-badge&logo=fastapi" alt="FastAPI Backend" /></a>
+    <a href="#getting-started"><img src="https://img.shields.io/badge/React%2018-Vite%20%2B%20TypeScript-61dafb?style=for-the-badge&logo=react" alt="React Frontend" /></a>
+    <a href="#architecture-4-loopback-subnet--edge-reverse-proxy-topology"><img src="https://img.shields.io/badge/Proxy-Nginx%201.28-009639?style=for-the-badge&logo=nginx" alt="Nginx Edge" /></a>
+    <a href="#license"><img src="https://img.shields.io/badge/License-MIT-amber.svg?style=for-the-badge" alt="License MIT" /></a>
   </p>
+
+  <p align="center">
+    <a href="#why-basket">Why Basket</a> •
+    <a href="#visual-tour--ecosystem-cockpit">Visual Tour</a> •
+    <a href="#core-architectures">Core Architectures</a> •
+    <a href="#central-service-registry">Service Registry</a> •
+    <a href="#fruits-ecosystem-directory">Fruits Ecosystem</a> •
+    <a href="#rest--websocket-api-reference">API Reference</a> •
+    <a href="#management-scripts-bat-system">BAT Orchestration</a> •
+    <a href="#getting-started">Getting Started</a>
+  </p>
+
 </div>
 
 ---
 
-## 🌟 Overview
-
-**Basket** is the root project and central command center for the entire **Fruits ecosystem** (Banana, Plum, Kiwi, Quince, and Lemon). 
-
-Previously, managing backends, Vite servers, AI models (llama.cpp, LM Studio), voice speech runtimes (Qwen3-ASR, Pocket TTS), MongoDB databases, and Nginx required opening dozens of cmd windows, navigating directories, running fragmented `.bat` files, or executing broad `taskkill` commands that frequently terminated unrelated background processes.
-
-Basket replaces this fragmented workflow with a unified **Apple-grade desktop operations application** adhering strictly to the *Quiet Utility* design language:
-
-* 🎛️ **Granular Process Lifecycle** — Start, restart, and end individual instances (e.g. restart only Quince LLM without disrupting STT, TTS, MongoDB, or Banana).
-* 🌐 **Complete Aggregate Workflows** — Safely start, restart, or shut down all managed instances across the entire ecosystem in strict dependency order.
-* 📜 **Live Azerbaijan/Azeret Mono Logs** — Inspect colored, collapsible, real-time log streams directly inside the web client with pause/resume, search filtering, and line limits.
-* 🚦 **Real Route Verification** — Active health checks distinguishing whether a process is running, whether reverse proxies respond, and whether upstream routes are reachable.
-* 🛡️ **Verifiable Process Identities** — Eliminates dangerous `taskkill /IM python.exe` by tracking PID, process creation timestamp, verified parent-child process trees, and listening ports.
-* 🚪 **Nginx First-Class Controls** — Validate syntax (`nginx -t`), reload configurations (`nginx -s reload`), and monitor ports 80 and 443 directly from the dashboard.
+<div align="center">
+  <img src="docs/screenshots/dashboard-hero.png" alt="Basket Operations Cockpit Dashboard" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.15);" />
+  <p><em>Desktop Operations Cockpit: Hardware telemetry HUD, aggregate dependency workflows, verifiable process trees, and edge route matrix.</em></p>
+</div>
 
 ---
 
-## 🌐 Architecture & Dashboard URLs
+## Why Basket?
 
-Basket provides both a dedicated local control service and full reverse-proxy integration via Nginx:
+Running a modern suite of local-first autonomous applications (Banana, Plum, Kiwi, Quince, Lemon, and Cherry) alongside local LLMs, Speech-to-Text (STT), Text-to-Speech (TTS), and databases typically descends into operational chaos:
 
-| Interface | URL | Destination | Role |
+* **Fragmented CLI Workflows**: Juggling dozens of detached terminal windows for `llama-server.exe`, `lms`, `mongod`, Vite dev servers, and FastAPI gateways.
+* **Unsafe Process Termination**: Executing blunt `taskkill /IM python.exe` commands that inadvertently terminate IDE language servers, build watchers, and background worker scripts.
+* **Monolithic Context Degradation**: Dumping active conversation history, reference documentation, and strict behavioral guidelines into a single vector database—causing prompt instructions to be filtered out because they were not "semantically similar" to the user prompt.
+* **Audio Stutter in Voice AI**: Chaining LLM token output directly to speech synthesis, leading to either robotic cadence or 3-second Time-to-First-Audio (TTFA) latency.
+* **Port Collisions and Cross-Origin Latency**: Fragile port mapping, mixed-content errors, and continuous CORS configuration overhead across local services.
+
+### The Solution
+
+* **Deterministic Process Tree Management**: Verifies process creation timestamps, executable paths, parent-child process lineages, and active socket binds before executing any lifecycle action.
+* **3-Tier Context and Knowledge Lifecycle**: Separates ephemeral multi-turn conversations ($O(1)$ switch), persistent hybrid knowledge (RRF $k=60$), and unconditional in-memory system guardrails.
+* **Adaptive Sub-Second Voice Streaming**: Custom boundary-aware `TextChunker` that delivers accelerated first-chunk audio (24–110 chars) while preserving linguistic prosody and acoustic boundaries.
+* **Isolated Loopback IP Subnetting**: Maps ecosystem services to private loopback aliases (`127.0.0.1` through `127.0.0.7`) under Nginx edge routing with zero-CORS unified origins.
+* **Strict Local-First Architecture**: Binds strictly to `127.0.0.X` interfaces, zero third-party telemetry, zero external cloud dependencies, and zero data leakage.
+
+---
+
+## Visual Tour & Ecosystem Cockpit
+
+### 1. Operations Cockpit & Hardware Telemetry
+> Unified desktop cockpit delivering real-time CPU/RAM/VRAM telemetry, one-click aggregate workflows, and route verification.
+
+<div align="center">
+  <img src="docs/screenshots/dashboard-hero.png" alt="Basket Control Dashboard" width="100%" style="border-radius: 10px;" />
+</div>
+
+* **Granular vs Aggregate Control**: Start, restart, or safely shut down individual microservices or trigger sequenced dependency bootups (`Database -> LLM -> Speech -> Edge -> Frontends`).
+* **Active Health Verifiers**: Continuous HTTP/TCP probes distinguishing whether a process is running, whether Nginx responds, and whether upstream handlers are reachable.
+* **Persistent Azeret Mono Logs**: Real-time multi-service stdout/stderr streaming with syntax highlighting, line filtering, and freeze controls.
+
+---
+
+### 2. Conversational Multi-Chat & Assistant Intelligence (Plum)
+> Production-grade intelligent personal assistant showcasing Basket's 3-Tier Context Engine and hybrid retrieval.
+
+<div align="center">
+  <img src="docs/screenshots/plum-chat.png" alt="Plum Conversational Workspace" width="100%" style="border-radius: 10px;" />
+</div>
+
+* **Lazy Context Bootstrapping**: Switches active conversation sessions in $<20\text{ms}$ by purging and bootstrapping volatile vector memory from MongoDB in a single atomic pass.
+* **Progressive Turn Indexing**: $O(1)$ concurrent batch-embedding of user and assistant responses to preserve instant short-term recall.
+* **Unconditional Guardrails**: Always guarantees that personal formatting rules and system constraints are followed without vector drift.
+
+---
+
+### 3. Persistent Knowledge Base & Real-Time Sync
+> Long-term document storage, facts, and policy reference indexed across both vector and lexical search spaces.
+
+<div align="center">
+  <img src="docs/screenshots/context-notes.png" alt="Context Notes Knowledge Base" width="100%" style="border-radius: 10px;" />
+</div>
+
+* **Incremental Mutation Webhooks**: Real-time REST webhooks (`POST /context/notes/sync`) instantly update or delete dense and sparse chunks with zero full-rebuild lag.
+* **Cross-Fruit Shared Memory**: Fruit applications can query persistent cross-domain knowledge while strictly isolating private namespaces.
+
+---
+
+### 4. Autonomous Fruit Workspaces (Kiwi & Banana)
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center">
+        <b>Kiwi: Offline File & Conversion Studio</b><br />
+        <img src="docs/screenshots/kiwi-converter.png" alt="Kiwi Converter Workspace" width="100%" style="border-radius: 8px;" />
+        <br />
+        <em>Local document, audio, video, and archive format conversion with admission control backpressure.</em>
+      </td>
+      <td width="50%" align="center">
+        <b>Banana: Private Media & Discovery Utility</b><br />
+        <img src="docs/screenshots/banana-media.png" alt="Banana Media Workspace" width="100%" style="border-radius: 8px;" />
+        <br />
+        <em>Offline audio trimming, media extraction, and algorithmic music similarity clustering.</em>
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
+## Core Architectures
+
+Basket is engineered around **7 distinct production architectures** that ensure resilience, low latency, and zero context degradation.
+
+```
++-------------------------------------------------------------------------------------------------------+
+|                                        BASKET ECOSYSTEM TOPOLOGY                                      |
++-------------------------------------------------------------------------------------------------------+
+                                                     |
+                                   HTTPS (*.jam / *.com) :80, :443
+                                                     v
+                                  +------------------------------------+
+                                  |      Nginx Edge Reverse Proxy      |
+                                  +------------------+-----------------+
+                                                     |
+             +--------------------+------------------+-------------------+--------------------+
+             |                    |                                      |                    |
+             v                    v                                      v                    v
+     [ 127.0.0.1:10020 ]  [ 127.0.0.1:10010 ]                    [ 127.0.0.2:10000 ]  [ 127.0.0.3:10000 ]
+     Basket Control UI    Basket Core API Gateway                Plum Email Client    Kiwi Converter
+             |                    |                                      |                    |
+             |                    +------------------+-------------------+                    |
+             |                                       |                                        |
+             v                                       v                                        v
+   +--------------------+               +--------------------------+             +--------------------+
+   |  Process Manager   |               |   3-Tier Context Engine  |             | External Binaries  |
+   |  • Safe Tree Kill  |               |   • Volatile Chats       |             | • FFmpeg           |
+   |  • Task Scheduler  |               |   • Persistent Notes     |             | • LibreOffice      |
+   |  • UTF-8 Logs      |               |   • Stitched Commands    |             | • Ghostscript      |
+   +--------------------+               +-------------+------------+             +--------------------+
+                                                      |
+                         +----------------------------+---------------------------+
+                         |                                                        |
+                         v                                                        v
+           +---------------------------+                            +---------------------------+
+           |    Hybrid RAG Engine      |                            |   Streaming Voice Loop    |
+           | • ChromaDB (Dense Vector) |                            | • Qwen3-ASR (STT Engine)  |
+           | • BM25Okapi (Sparse Lex)  |                            | • Adaptive Text Chunker   |
+           | • Reciprocal Rank Fusion  |                            | • PocketTTS 24kHz PCM     |
+           | • Cross-Encoder Reranker  |                            | • MCP Tool Calling Loop   |
+           +---------------------------+                            +---------------------------+
+```
+
+---
+
+### Architecture 1: 3-Tier Context & Knowledge Engine
+
+The fundamental limitation of naive RAG systems is treating all context equally. In Basket, context is separated into **three distinct architectural tiers** based on lifespan, update velocity, and retrieval priority (`src/services/context/tiered_context.py`):
+
+```
+                                  Incoming User Prompt / Completion
+                                                  |
+                    +-----------------------------+-----------------------------+
+                    |                             |                             |
+                    v                             v                             v
+       [ TIER 1: Volatile Chat ]     [ TIER 2: Persistent Notes ]      [ TIER 3: Commands ]
+       • Active Session Messages     • Long-Term Knowledge Base        • Persona & Guardrails
+       • Volatile ChromaDB + BM25    • Persistent ChromaDB + BM25      • High-Speed Memory Cache
+       • Purged on Chat Switch       • Real-time Webhook Sync          • Zero Vector Search
+       • Progressive O(1) Append     • Cross-Session Retention         • Unconditional Injection
+                    |                             |                             |
+                    v (Weight: 0.7)               v (Weight: 0.3)               v (Weight: Absolute)
+            [ Top 4 Chunks ]              [ Top 3 Chunks ]              [ <SYSTEM_COMMANDS> ]
+                    |                             |                             |
+                    +-----------------------------+-----------------------------+
+                                                  |
+                                                  v
+                               +-------------------------------------+
+                               | Stitched LLM System / User Payload  |
+                               +-------------------------------------+
+```
+
+| Dimension | Tier 1: Volatile Chat | Tier 2: Persistent Notes | Tier 3: Stitched Commands |
 |---|---|---|---|
-| **Local Direct Dashboard** | `http://127.0.0.1:7010` | Basket Control API & Client | Direct access bypassing reverse proxy |
-| **Hosted Nginx Dashboard** | `http://basket.com` | `client/dist` & `127.0.0.1:7010/api` | Primary browser URL (HTTP) |
-| **Hosted SSL Dashboard** | `https://basket.com` | `client/dist` & `127.0.0.1:7010/api` | Primary browser URL (HTTPS / SSL) |
-| **Basket Core API** | `http://api.basket.com` | `127.0.0.1:7000` | Core FastAPI backend (preserved) |
-| **Basket Core Direct** | `http://127.0.0.1:7000` | `src.main:app` | Direct FastAPI API |
+| **Primary Scope** | Active conversation session | Permanent knowledge base & docs | Behavioral constraints & rules |
+| **Storage Engine** | `volatile_chats` (ChromaDB + BM25) | `persistent_notes` (ChromaDB + BM25)| In-memory cache (`_commands_cache`)|
+| **Persistence Source**| MongoDB `<fruit>.chats` | MongoDB `<fruit>.notes` | MongoDB `<fruit>.commands` |
+| **Retention Policy** | Purged upon session switch | Permanent across all sessions | Permanent system-wide |
+| **Indexing Strategy** | $O(1)$ batch append per turn | Incremental webhook sync | Direct cache insertion |
+| **Retrieval Weight** | **Highest ($W=0.7$)** | **Secondary ($W=0.3$)** | **Absolute (Unconditional)** |
+| **Search Mechanism** | Reciprocal Rank Fusion ($k=60$) | Reciprocal Rank Fusion ($k=60$) | **None** (Stitched verbatim) |
 
-```mermaid
-flowchart TD
-    User([Browser Client]) -->|http://basket.com| Nginx[Nginx Reverse Proxy :80/:443]
-    User -->|http://127.0.0.1:7010| Control[Basket Control Service :7010]
-    Nginx -->|/api/*| Control
-    Nginx -->|/*| Dist[client/dist Static SPA]
-    
-    Control --> Registry[Central Service Registry]
-    Registry --> PM[Process Manager Engine]
-    
-    PM --> Infra[Infrastructure Services]
-    Infra --> BasketAPI[Basket Core API :7000]
-    Infra --> LLM[Quince LLM CUDA :7001]
-    Infra --> LMS[LM Studio :7006]
-    Infra --> STT[Qwen3-ASR :7002]
-    Infra --> TTS[Pocket TTS :7003]
-    Infra --> Mongo[MongoDB :7005 / :4090]
-    
-    PM --> Fruits[Fruits Ecosystem]
-    Fruits --> Banana[Banana Media :6060]
-    Fruits --> Plum[Plum Email :4050 / :4060]
-    Fruits --> Kiwi[Kiwi Converter :5060]
-    Fruits --> Quince[Quince MCP :7100]
-    Fruits --> Lemon[Lemon Android Client]
+#### Why Tier 3 Bypasses Vector Search Entirely
+Standard RAG fails when instructions like *"Always format output as ISO 8601"* are stored as vector chunks. When a user asks *"What was my last invoice amount?"*, cosine similarity calculates near-zero relevance for the date formatting rule and drops it. 
+Basket eliminates this failure mode: **Tier 3 commands bypass vector similarity completely** and are stitched unconditionally into `<SYSTEM_COMMANDS>` headers on every turn.
+
+---
+
+### Architecture 2: Hybrid RAG & Reciprocal Rank Fusion (RRF)
+
+To ensure maximum recall across both conceptual semantics and exact keyword matches (e.g., error codes, function names, IDs), Basket couples dense vector search with sparse lexical matching (`src/services/retrieval/chat_retriever.py`):
+
+1. **Dense Semantic Retrieval**: Powered by `jinaai/jina-embeddings-v5-text-nano` generating 512-dimensional vector representations stored in ChromaDB.
+2. **Sparse Lexical Retrieval**: Custom in-memory `BM25Okapi` search engine indexing tokenized n-grams.
+3. **Reciprocal Rank Fusion (RRF)**: Instead of naively adding cosine similarities to unbounded BM25 scores (which skews ranking), Basket applies rank-based fusion with a smoothing constant $k=60$:
+
+$$\text{RRF Score}(d) = \sum_{m \in \{\text{vector}, \text{bm25}\}} \frac{W_m}{k + \text{Rank}_m(d)}$$
+
+Where:
+* $W_{\text{vector}} = 0.6$, $W_{\text{bm25}} = 0.4$ for volatile chat candidates.
+* $W_{\text{vector}} = 0.5$, $W_{\text{bm25}} = 0.5$ for persistent knowledge notes.
+4. **Optional Neural Reranking**: Re-scores top fused candidates with a local Cross-Encoder (`cross-encoder/ettin-reranker-32m-v1`) before final context assembly.
+
+---
+
+### Architecture 3: Sub-Second Streaming Voice & Agentic Pipeline
+
+Basket's voice assistant architecture (`src/services/chat/chat_pipeline.py`) eliminates conversational lag through an event-driven streaming pipeline:
+
+```
+[ Microphone Input ] 
+         │ 
+         ▼
+[ Qwen3-ASR (Speech-to-Text :10040) ]
+         │ Text Stream
+         ▼
+[ Autonomous Agent & MCP Loop ] ──Tool Call──> [ Quince MCP Tools (:10010) ]
+         │                                               │
+         │ Tokens                                  Tool Execution Result
+         ▼                                               │
+[ Streaming LLM (llama.cpp / LM Studio :10030) ] <───────┘
+         │
+         ▼
+┌────────────────────────────────────────────────────────┐
+│               Adaptive TextChunker Engine              │
+│  • Hard boundaries: ['.', '?', '!', '\n']              │
+│  • Soft boundaries: [',', ';', ':']                    │
+│  • First chunk acceleration: 24–110 characters         │
+│  • Subsequent phrase target: 190–320 characters        │
+│  • Non-terminal period heuristic (e.g., 'v1.2', 'Dr.') │
+└──────────────────────────┬─────────────────────────────┘
+                           │ Balanced Sentences / Phrases
+                           ▼
+[ PocketTTS / Kokoro Neural Synthesis Engine (:10050) ]
+                           │
+                           ▼
+[ Raw 24kHz 16-Bit Mono PCM Stream via Server-Sent Events / WebSocket ]
 ```
 
----
-
-## 📋 Central Service Registry
-
-Every managed process is declared once in `src/control/registry.py` with verified parameters, health check strategies, and process-matching signatures:
-
-| Service ID | Instance Name | Category | Host & Port | Start Command | Health Strategy | Task Scheduler |
-|---|---|---|---|---|---|---|
-| `basket-control` | Basket Operations Dashboard | Control | `127.0.0.1:7010` | `python run_control.py` | HTTP `GET /api/health` | — |
-| `basket-api` | Basket Core API Gateway | Infrastructure | `127.0.0.1:7000` | `python run.py` | HTTP `GET /docs` | `Basket Server` |
-| `nginx` | Nginx Reverse Proxy | Proxy | `127.0.0.1:80,443` | `Start Enginx` | HTTP `GET /` | `Start Enginx` |
-| `mongodb` | Basket MongoDB | Database | `127.0.0.1:7005` | `mongod --port 7005` | TCP Port `7005` | — |
-| `llm-llama` | Quince LLM (llama.cpp) | LLM | `127.0.0.1:7001` | `llama-server.exe (CUDA)` | HTTP `GET /health` | — |
-| `lms` | LM Studio Server | LLM | `127.0.0.1:7006` | `lms server start` | TCP Port `7006` | `LMS Server Start` |
-| `stt-qwen` | Qwen3-ASR Speech-to-Text | Speech | `127.0.0.1:7002` | `llama-server.exe (CPU)` | HTTP `GET /health` | — |
-| `tts-pocket` | Pocket TTS | Speech | `127.0.0.1:7003` | `pocket-tts serve` | TCP Port `7003` | — |
-| `fruit-banana` | Banana Media Utility | Fruit | `127.0.0.3:6060` | `python run.py` | HTTP `GET /docs` | `Banana Backend` |
-| `fruit-plum-backend` | Plum Email Server | Fruit | `127.0.0.2:4050,4065` | `node dist/index.js` | TCP Port `4050` | — |
-| `fruit-plum-frontend` | Plum Client Dev Server | Fruit | `127.0.0.2:4060` | `vite --port 4060` | HTTP `GET /` | — |
-| `fruit-plum-mongo` | Plum Dedicated MongoDB | Database | `127.0.0.1:4090` | `mongod --port 4090` | TCP Port `4090` | — |
-| `fruit-kiwi` | Kiwi File Converter | Fruit | `127.0.0.4:5060` | `python run.py` | HTTP `GET /docs` | `Kiwi Backend` |
-| `fruit-quince` | Quince Assistant MCP | Fruit | `127.0.0.1:7100` | `python run_mcp.py` | TCP Port `7100` | — |
-| `fruit-lemon` | Lemon Android App | Fruit | Mobile Device | Android APK | Native System | — |
-
-> [!NOTE]
-> **SearXNG Decommissioning**: SearXNG has been decommissioned from active infrastructure. Its virtual host, routes, aggregate startup integration, and monitoring have been safely removed while retaining all historical persistent data.
+* **Accelerated First-Chunk Delivery**: The chunker releases the first phonetic block after only 24–110 characters, achieving a sub-500ms Time-to-First-Audio (TTFA).
+* **Prosody Protection**: Subsequent chunks wait for soft/hard punctuation boundaries (190+ chars) so the TTS engine has adequate phonetic context for natural inflection and breathing pauses.
 
 ---
 
-## 🛠️ Management Scripts (BAT System)
+### Architecture 4: Loopback Subnet & Edge Reverse-Proxy Topology
 
-A complete, 39-script orchestration system is organised in `infrastructure/`. Every service, fruit, and Basket itself has its own trio of scripts (`start.bat`, `restart.bat`, `end.bat`):
+To prevent port collisions and eliminate browser CORS pre-flight latency, Basket implements an edge reverse-proxy topology on Windows loopback IP aliases (`127.0.0.X`):
 
-```text
-infrastructure/
-├── [Original preserved scripts: config.bat, start.bat, stop.bat, restart.bat, status.bat]
-│
-├── logs/                         <-- Per-instance persistent UTF-8 logs
-├── run/                          <-- Verified PID records & operations.json
-│
-├── all/                          <-- Full Ecosystem Orchestration
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-├── basket/                       <-- Basket API Gateway
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-├── nginx/                        <-- Nginx Edge Reverse Proxy
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-├── mongodb/                      <-- Core Basket MongoDB Database
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-├── llama/                        <-- Quince LLM (llama.cpp CUDA)
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-├── lms/                          <-- LM Studio Local Server
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-├── stt/                          <-- Qwen3-ASR Speech-to-Text
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-├── tts/                          <-- Pocket TTS Text-to-Speech
-│   ├── start.bat
-│   ├── restart.bat
-│   └── end.bat
-│
-└── fruits/
-    ├── banana/                   <-- Banana Media Utility
-    │   ├── start.bat
-    │   ├── restart.bat
-    │   └── end.bat
-    ├── plum/                     <-- Plum Email Assistant (Server, Client & Mongo)
-    │   ├── start.bat
-    │   ├── restart.bat
-    │   └── end.bat
-    ├── kiwi/                     <-- Kiwi File Converter
-    │   ├── start.bat
-    │   ├── restart.bat
-    │   └── end.bat
-    ├── quince/                   <-- Quince Local Voice Runtime & MCP Server
-    │   ├── start.bat
-    │   ├── restart.bat
-    │   └── end.bat
-    └── lemon/                    <-- Lemon Android Client (Status reporting)
-        ├── start.bat
-        ├── restart.bat
-        └── end.bat
+```
+                        User Browser / Client
+                                  │
+                 https://basket.jam / https://plum.jam
+                                  │
+                        [ Nginx Edge Proxy ]
+                                  │
+      ┌───────────────────────────┼───────────────────────────┐
+      │                           │                           │
+127.0.0.1:10010             127.0.0.2:10000             127.0.0.3:10000
+Basket Core API             Plum Web App                Kiwi File Converter
+      │                           │                           │
+127.0.0.1:10020             127.0.0.2:10010             127.0.0.4:10000
+Basket Control              Plum WebSocket              Banana Media
 ```
 
-### Script Execution Features
-* **Safe Target Isolation**: Executing `infrastructure/llama/restart.bat` restarts Quince LLM without terminating STT, TTS, MongoDB, or Nginx.
-* **Interactive vs Automated**: Scripts pause when double-clicked in Windows Explorer, but exit cleanly without pausing when passed `/nopause` or when `BASKET_NO_PAUSE=1` is set.
-* **Exit Codes**: Standard exit codes (`0` for verified success, `1` for error) allow scripts to be embedded into external CI or scheduled tasks.
+* **Single Origin Guarantee**: By hosting the client single-page application and its backing API under unified Nginx host blocks (`http://basket.jam/api/*`), API requests execute with zero CORS overhead and zero mixed-content warnings.
+* **Shared Ecosystem Static Assets**: Standardized brand assets, SVG icons, and typefaces are centralized in `Basket/assets` and mounted across all virtual hosts.
 
 ---
 
-## 🍓 Fruits Ecosystem Directory
+### Architecture 5: Operations Control Plane & Process Manager
 
-The dashboard showcases every fruit using its genuine branding and highlights its operational state:
+Standard process killing scripts rely on generic executable names (`taskkill /F /IM python.exe`), which catastrophically terminate unrelated processes. Basket's Process Manager (`src/control/process_manager.py`) guarantees **verifiable process identity**:
 
-| Fruit | Application Type | Logo Source | Browser Route | Upstream Destination | Redirector Status |
+* **Four-Factor Process Verification**:
+  1. `Process ID (PID)`
+  2. `Creation Timestamp (create_time)`
+  3. `Verified Parent-Child Tree Topology`
+  4. `Active TCP Port Listeners (via psutil)`
+* **Tree-Aware Graceful Teardown**: Automatically traces child worker processes (e.g., Uvicorn workers, spawned FFmpeg jobs) and issues graceful `SIGTERM` signals before falling back to isolated tree termination.
+* **Windows Task Scheduler Integration**: Directly coordinates with elevated boot tasks (`Start Enginx`, `Banana Backend`, `Kiwi Backend`, `LMS Server Start`).
+
+---
+
+### Architecture 6: Multi-Tenant Database Namespace Isolation
+
+Basket coordinates a central, high-performance MongoDB instance (`mongodb://127.0.0.1:10000/`) structured by application namespaces:
+
+```
+mongodb://127.0.0.1:10000/
+├── basket/      <-- Central orchestration metadata & operations history
+├── plum/        <-- Plum Email Assistant namespace
+│   ├── chats    <-- Multi-chat session threads (user & assistant turns)
+│   ├── notes    <-- Persistent knowledge base & policies
+│   └── commands <-- Stitched system prompt rules
+├── kiwi/        <-- Kiwi Converter namespace (conversion records & preferences)
+├── banana/      <-- Banana Media namespace (audio catalog & playlists)
+├── quince/      <-- Quince Desktop Assistant namespace (MCP records & activity logs)
+├── lemon/       <-- Lemon Network Guardian namespace (DNS rules & loopback tunnels)
+└── cherry/      <-- Cherry Productivity namespace (sessions & accountability tasks)
+```
+
+Every conversational application adheres to the strict **3-collection contract** (`chats`, `notes`, `commands`), enabling seamless plug-and-play onboarding for future applications.
+
+---
+
+### Architecture 7: Fruit Family Design System ("Quiet Utility")
+
+The visual interface across all Fruit web clients, Android apps, and dashboards adheres to the **Quiet Utility** design system (`docs/DESIGN.md`):
+
+* **Apple-Grade Optical Glass**: Strict mathematical formulations for blur (`10px`–`15px`), saturation multipliers (`140%`–`160%`), and hairline interior edge highlights (`inset 0 1px 1px rgba(255,255,255,0.7)`).
+* **Deterministic OKLCH Accent Derivation**: Accent color palettes are algorithmically extracted from each fruit's SVG icon in OKLCH color space to guarantee WCAG AA 4.5:1 contrast without arbitrary hex hardcoding.
+* **Compositor-Only 120fps Rendering**: Animate strictly GPU-accelerated compositing properties (`transform`, `opacity`) with zero layout reflow triggers on high-refresh displays.
+* **Tactile Audio SFX Engine**: Embedded HTML5 sound pool providing auditory feedback (`enter`, `back`, `notification`, `scroll`) throttled at 140ms with silent failure fallbacks.
+
+---
+
+## Central Service Registry
+
+Every managed process is declared once in `src/control/registry.py` with verified ports, start commands, health strategies, and process signatures:
+
+| Service ID | Instance Name | Category | Loopback Binding | Health Check Strategy | Task Scheduler |
 |---|---|---|---|---|---|
-| **Banana** | Media Downloader & Audio Trimmer | `banana-icon.svg` | `https://banana.com` | `fruits/banana/client/dist` (API: `127.0.0.3:6060`) | Active Web Gateway |
-| **Plum** | Personal Intelligent Email Client | `plum-icon.svg` | `https://plum.com` | `127.0.0.2:4060` (API: `127.0.0.2:4050`, WS: `4065`) | Active Web Gateway |
-| **Kiwi** | Offline File & Format Converter | `kiwi-icon.svg` | `https://kiwi.com` | `fruits/kiwi/client/dist` (API: `127.0.0.4:5060`) | Active Web Gateway |
-| **Quince** | Windows AI Runtime & System MCP | Stylized Letter Mark | None | `stdio / 127.0.0.1:7100` | **No Redirector** (System Assistant) |
-| **Lemon** | Private Android DNS Workspace | `lemon-icon.png` | None | Mobile TUN Loopback | **No Redirector** (Android Client) |
-| **Cherry** | Ecosystem Workspace Module | `basket-icon.svg` | None | Local Workspace | Initialized |
+| `basket-control` | Basket Operations Dashboard | Control | `127.0.0.1:10020` | HTTP `GET /api/health` | — |
+| `basket-api` | Basket Core API Gateway | Infrastructure | `127.0.0.1:10010` | HTTP `GET /docs` | `Basket Server` |
+| `nginx` | Nginx Edge Reverse Proxy | Proxy | `127.0.0.1:80, 443` | HTTP `GET /` | `Start Enginx` |
+| `mongodb` | Central MongoDB Server | Database | `127.0.0.1:10000` | TCP Port `10000` | — |
+| `llm-llama` | Quince LLM (llama.cpp) | LLM | `127.0.0.1:10030` | HTTP `GET /health` | — |
+| `lms` | LM Studio Local Server | LLM | `127.0.0.1:10030` | TCP Port `10030` | `LMS Server Start` |
+| `stt-qwen` | Qwen3-ASR Speech-to-Text | Speech | `127.0.0.1:10040` | HTTP `GET /health` | — |
+| `tts-pocket` | Pocket TTS / Kokoro | Speech | `127.0.0.1:10050` | TCP Port `10050` | — |
+| `fruit-plum` | Plum Email Assistant | Fruit | `127.0.0.2:10000` | TCP Port `10000` | — |
+| `fruit-kiwi` | Kiwi File Converter | Fruit | `127.0.0.3:10000` | HTTP `GET /docs` | `Kiwi Backend` |
+| `fruit-banana` | Banana Media Utility | Fruit | `127.0.0.4:10000` | HTTP `GET /docs` | `Banana Backend` |
+| `fruit-quince` | Quince System MCP | Fruit | `127.0.0.5:10000` | TCP Port `10010` | — |
+| `fruit-lemon` | Lemon Android Guardian | Fruit | `127.0.0.6:10000` | DNS UDP/TCP `53` | — |
+| `fruit-cherry` | Cherry Productivity | Fruit | `127.0.0.7:10000` | HTTP `GET /` | — |
 
 ---
 
-## 🌐 Nginx Reverse-Proxy Routes
+## Fruits Ecosystem Directory
 
-Basket configures and manages the edge reverse proxy hosted in `C:\nginx`:
+Basket coordinates a dedicated suite of local-first applications:
 
-```nginx
-# Basket Operations Dashboard
-server {
-    listen 80;
-    server_name basket.com;
-    root C:/Users/ADMIN/OneDrive/CODES/Projects/Projects/Basket/client/dist;
-    index index.html;
-    location /api/ {
-        proxy_pass http://127.0.0.1:7010/api/;
-    }
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
+| Application | Domain | Purpose | Tech Stack |
+|---|---|---|---|
+| **Banana** | `https://banana.jam` | High-fidelity media downloader, audio trimmer, and algorithmic music discovery. | FastAPI, React, Tailwind, FFmpeg |
+| **Plum** | `https://plum.jam` | Personal intelligent email client with multi-chat AI summarization and inbox triage. | Express, React, Vite, MongoDB |
+| **Kiwi** | `https://kiwi.jam` | 100% offline file converter and document compression studio. | FastAPI, React, Pandoc, LibreOffice |
+| **Quince** | `https://quince.jam` | Windows desktop copilot, Chrome extension, and system MCP runtime. | Python, FastAPI, Chrome DevTools |
+| **Lemon** | `https://lemon.jam` | Android DNS firewall, loopback TUN proxy, and behavioral self-control app. | Jetpack Compose, Kotlin, FastAPI |
+| **Cherry** | `https://cherry.jam` | Focused deep-work workspace, task accountability, and distraction shielding. | FastAPI, React 18, Tailwind CSS |
+
+---
+
+## REST & WebSocket API Reference
+
+All requests to Basket APIs require the application identification header:
+```http
+X-Basket-Application: <fruit_name>
+```
+
+### 1. Conversational Chat Stream (`POST /chat/text`)
+Executes multi-turn conversation inference with tiered context retrieval and progressive append:
+
+```json
+{
+  "text": "What was the budget limit mentioned in our policy notes?",
+  "application": "plum",
+  "chat_id": "6737a9f8b4c21e001234abcd",
+  "retrieve_chat": true,
+  "retrieve_notes": true,
+  "synthesize_speech": false,
+  "llm": {
+    "system_prompt": "You are Plum Assistant. Be concise.",
+    "temperature": 0.7
+  }
+}
+```
+*Returns: Server-Sent Events (`event: delta`, `data: {"content": "..."}`) ending with `event: done`.*
+
+---
+
+### 2. Fast Stateful/Stateless Inference (`POST /completion`)
+Executes single-turn inferences with optional inline context:
+
+```json
+{
+  "prompt": "Extract action items and assignees.",
+  "application": "cherry",
+  "context": [
+    { "content": "Alex agreed to finish migration by Tuesday.", "metadata": { "source": "transcript" } }
+  ],
+  "temperature": 0.2
 }
 ```
 
-* **Hosts Entry**: Ensure `127.0.0.1 basket.com` exists in `C:\Windows\System32\drivers\etc\hosts`.
-* **Zero CORS**: Because the dashboard web app and its control API are served under the same origin via both `http://basket.com` and `http://127.0.0.1:7010`, requests execute with zero CORS overhead or mixed-content errors.
+---
+
+### 3. Incremental Knowledge Sync (`POST /context/notes/sync`)
+Notifies Basket of note creation, mutation, or deletion to update ChromaDB and BM25:
+
+```json
+{
+  "application": "plum",
+  "action": "upsert",
+  "note_id": "6737b019b4c21e005678efaa",
+  "title": "Quarterly Travel Policy",
+  "content": "All travel flights must be booked at least 14 days in advance.",
+  "metadata": { "category": "policy" }
+}
+```
 
 ---
 
-## ⏰ Windows Task Scheduler & Logging
+### 4. Operations Control API (`POST /control/api/services/{service_id}/{action}`)
+Allows programmatic lifecycle orchestration (`start`, `restart`, `end`):
 
-Basket natively integrates with processes launched at Windows boot via Task Scheduler:
-
-* **Discovered Tasks**:
-  * `Start Enginx` (`C:\nginx\run-enginx.bat`) — Runs with highest elevation to manage port 80/443.
-  * `Banana Backend` (`C:\Basket\Banana\start-server.bat`) — Launches Banana FastAPI server.
-  * `Kiwi Backend` (`C:\Kiwi\start-backend.bat`) — Launches Kiwi FastAPI converter.
-  * `LMS Server Start` (`C:\Basket\lms-server-start.bat`) — Launches LM Studio server.
-  * `Basket Server` (`infrastructure\start.bat`) — Launches Basket core.
-* **Persistent Logging**:
-  * All stdout and stderr streams are redirected to `infrastructure/logs/<service_id>.log`.
-  * Logs preserve original timestamps and UTF-8 encoding.
-  * Rendered inside the client using local **Azeret Mono** variable fonts with syntax-aware color tagging (errors in rose red, warnings in amber, status messages in emerald).
+```bash
+curl -X POST http://127.0.0.1:10020/api/services/llm-llama/restart
+```
 
 ---
 
-## 🚀 Getting Started
+## Management Scripts (BAT System)
 
-### 1. Prerequisites
-* Windows 10/11
-* Python 3.10+ (located in workspace `.venv`)
-* Node.js v18+ & npm (for building the client)
-* Nginx installed at `C:\nginx`
+A 39-script orchestration system is maintained in `infrastructure/` providing standalone command-line control:
 
-### 2. Build the Operations Client
+```text
+infrastructure/
+├── logs/                         <-- Per-instance persistent UTF-8 logs
+├── run/                          <-- Verified PID records & operations.json
+├── all/                          <-- Full Ecosystem Orchestration (start.bat, restart.bat, end.bat)
+├── basket/                       <-- Basket Core Gateway (start.bat, restart.bat, end.bat)
+├── nginx/                        <-- Nginx Edge Reverse Proxy (start.bat, restart.bat, end.bat)
+├── mongodb/                      <-- Central MongoDB Database (start.bat, restart.bat, end.bat)
+├── llama/                        <-- Quince LLM (llama.cpp CUDA) (start.bat, restart.bat, end.bat)
+├── lms/                          <-- LM Studio Local Server (start.bat, restart.bat, end.bat)
+├── stt/                          <-- Qwen3-ASR Speech-to-Text (start.bat, restart.bat, end.bat)
+├── tts/                          <-- Pocket TTS Engine (start.bat, restart.bat, end.bat)
+└── fruits/
+    ├── banana/                   <-- Banana Media Utility
+    ├── plum/                     <-- Plum Email Server, Client & Dedicated Mongo
+    ├── kiwi/                     <-- Kiwi File Converter
+    ├── quince/                   <-- Quince Desktop AI Runtime & MCP Server
+    └── lemon/                    <-- Lemon Android Bridge
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+* **Operating System**: Windows 10/11
+* **Python**: 3.10+ (located in workspace `.venv`)
+* **Node.js**: v18+ & npm
+* **Nginx**: Installed at `C:\nginx`
+* **MongoDB**: Community Server installed locally
+
+---
+
+### Step 1: Initialize Virtual Environment & Dependencies
+
+```powershell
+# Clone the repository
+git clone https://github.com/yourusername/Basket.git
+cd Basket
+
+# Create and activate Python virtual environment
+python -m venv .venv
+.\.venv\Scripts\activate
+
+# Install core backend requirements
+pip install -r requirements.txt
+```
+
+---
+
+### Step 2: Build the Operations Dashboard Client
+
 ```powershell
 cd client
 npm install
 npm run build
+cd ..
 ```
-*(Builds static production assets directly into `client/dist/`)*
-
-### 3. Start Basket Operations Control
-```powershell
-# Directly via Python:
-.\.venv\Scripts\python.exe run_control.py
-
-# Or via the new management script:
-.\infrastructure\basket\start.bat
-```
-
-### 4. Access the Dashboard
-Open your browser and navigate to:
-* **`http://127.0.0.1:7010`**
-* **`http://basket.com`** (or `https://basket.com`)
+*(Builds the static SPA directly into `client/dist/`)*
 
 ---
 
-## 🔒 Security & Local-First Guarantee
+### Step 3: Launch Basket Operations Control
 
-* **Localhost Binding**: The Basket Control API binds strictly to `127.0.0.1` and never binds to public interfaces (`0.0.0.0`).
-* **Allowlisted Operations**: The API accepts only validated service IDs and predefined operation verbs (`start`, `restart`, `end`). Arbitrary shell execution or path traversal is strictly prohibited.
-* **No Telemetry**: Basket operates 100% offline with zero cloud telemetry, tracking pixels, or remote dependencies.
+Launch the operations control plane via Python or through the pre-packaged management scripts:
+
+```powershell
+# Option A: Directly via Python
+.\.venv\Scripts\python.exe run_control.py
+
+# Option B: Via the orchestration script
+.\infrastructure\basket\start.bat
+```
+
+Open your browser and navigate to:
+* Direct Local Dashboard: **`http://127.0.0.1:10020`**
+* Reverse Proxy Host: **`https://basket.jam`** (or `http://basket.com`)
+
+---
+
+## Configuration Reference (`.env`)
+
+| Variable | Default Value | Description |
+|---|---|---|
+| `BASKET_HOST` | `127.0.0.1` | Binding interface for Basket Core Gateway |
+| `BASKET_PORT` | `10010` | HTTP port for Basket Core Gateway |
+| `BASKET_CONTROL_PORT`| `10020` | HTTP port for Basket Operations Dashboard API |
+| `MONGODB_URI` | `mongodb://127.0.0.1:10000/`| Connection string to central MongoDB cluster |
+| `VECTOR_DB_PATH` | `./chromadb` | Filesystem path for persistent ChromaDB storage |
+| `EMBEDDING_MODEL_NAME`| `jinaai/jina-embeddings-v5-text-nano` | Sentence embedding model for dense vector search |
+| `RERANKER_MODEL_NAME` | `cross-encoder/ettin-reranker-32m-v1` | Neural cross-encoder for semantic reranking |
+| `LLM_HOST` | `127.0.0.1` | Upstream host for llama.cpp / LM Studio |
+| `LLM_PORT` | `10030` | Upstream port for local LLM inference server |
+| `STT_HOST` | `127.0.0.1` | Host for Qwen3-ASR speech recognition server |
+| `STT_PORT` | `10040` | Port for Qwen3-ASR speech recognition server |
+| `TTS_HOST` | `127.0.0.1` | Host for PocketTTS / Kokoro speech synthesis |
+| `TTS_PORT` | `10050` | Port for PocketTTS / Kokoro speech synthesis |
+| `CHAT_CHUNK_SIZE` | `600` | Character ceiling per chunk in vector/BM25 splitters |
+| `CHAT_CHUNK_OVERLAP` | `80` | Overlap characters to preserve context continuity |
+
+---
+
+## Verification & Testing
+
+Verify that all subsystems, APIs, and background processes are operating with zero degradation:
+
+```powershell
+# Run backend test suite
+pytest tests -v
+
+# Verify process manager health
+curl http://127.0.0.1:10020/api/health
+
+# Verify Nginx reverse-proxy syntax
+nginx -t
+```
+
+---
+
+## License
+
+Distributed under the **MIT License**.  
+Crafted with architectural rigor, privacy, and uncompromising local-first engineering principles.

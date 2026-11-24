@@ -724,6 +724,9 @@ def start_all_services() -> Dict[str, Any]:
     overall_success = True
 
     for s_def in sorted_services:
+        # Lemon application is currently disabled / broken
+        if s_def.id == "fruit-lemon":
+            continue
         mgr = MANAGERS[s_def.id]
         res = mgr.start()
         results[s_def.id] = res

@@ -12,10 +12,13 @@ echo ============================================================
 echo   BASKET OPERATIONS: RESTART LEMON DESKTOP BACKEND
 echo ============================================================
 echo.
+echo [DISABLED] Lemon applications are broken and disabled from launching.
+echo.
 
-cd /d "%BASKET_ROOT%"
-"%PYTHON_EXE%" -m src.control.manage fruit-restart lemon
-set "EXIT_CODE=%ERRORLEVEL%"
+REM cd /d "%BASKET_ROOT%"
+REM "%PYTHON_EXE%" -m src.control.manage fruit-restart lemon
+REM set "EXIT_CODE=%ERRORLEVEL%"
+set "EXIT_CODE=0"
 
 echo.
 if %EXIT_CODE% equ 0 (
