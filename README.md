@@ -21,7 +21,7 @@
 
   <p align="center">
     <a href="#why-basket">Why Basket</a> •
-    <a href="#visual-tour--ecosystem-cockpit">Visual Tour</a> •
+    <a href="#visual-tour--operations-cockpit">Visual Tour</a> •
     <a href="#core-architectures">Core Architectures</a> •
     <a href="#central-service-registry">Service Registry</a> •
     <a href="#fruits-ecosystem-directory">Fruits Ecosystem</a> •
@@ -35,8 +35,8 @@
 ---
 
 <div align="center">
-  <img src="docs/screenshots/dashboard-hero.png" alt="Basket Operations Cockpit Dashboard" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.15);" />
-  <p><em>Desktop Operations Cockpit: Hardware telemetry HUD, aggregate dependency workflows, verifiable process trees, and edge route matrix.</em></p>
+  <img src="docs/screenshots/overview-telemetry.png" alt="Basket Operations Cockpit: Hardware Telemetry and Edge Orchestration" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.15);" />
+  <p><em>Desktop Operations Cockpit: Real-time CPU/RAM/VRAM telemetry HUD, Nginx edge proxy orchestration, and one-click aggregate workflows.</em></p>
 </div>
 
 ---
@@ -61,65 +61,57 @@ Running a modern suite of local-first autonomous applications (Banana, Plum, Kiw
 
 ---
 
-## Visual Tour & Ecosystem Cockpit
+## Visual Tour & Operations Cockpit
 
 ### 1. Operations Cockpit & Hardware Telemetry
-> Unified desktop cockpit delivering real-time CPU/RAM/VRAM telemetry, one-click aggregate workflows, and route verification.
+> Unified desktop cockpit delivering real-time CPU/RAM/VRAM telemetry, one-click aggregate workflows, and active route verification.
 
 <div align="center">
-  <img src="docs/screenshots/dashboard-hero.png" alt="Basket Control Dashboard" width="100%" style="border-radius: 10px;" />
+  <img src="docs/screenshots/overview-telemetry.png" alt="Operations Overview and Telemetry HUD" width="100%" style="border-radius: 10px;" />
 </div>
 
-* **Granular vs Aggregate Control**: Start, restart, or safely shut down individual microservices or trigger sequenced dependency bootups (`Database -> LLM -> Speech -> Edge -> Frontends`).
-* **Active Health Verifiers**: Continuous HTTP/TCP probes distinguishing whether a process is running, whether Nginx responds, and whether upstream handlers are reachable.
-* **Persistent Azeret Mono Logs**: Real-time multi-service stdout/stderr streaming with syntax highlighting, line filtering, and freeze controls.
+* **Hardware Telemetry HUD**: Live monitoring of CPU utilization, core temperature, physical RAM saturation, GPU load, and dedicated VRAM allocation.
+* **Nginx Edge Controls**: Real-time reverse proxy management, port status monitoring (Ports 80 and 443 SSL), syntax verification (`nginx -t`), and live configuration reloading.
+* **Aggregate Workflows**: Sequenced, dependency-ordered orchestration (`Start All`, `Restart All`, `Stop All`) managing 14 services and 20 edge routes simultaneously.
 
 ---
 
-### 2. Conversational Multi-Chat & Assistant Intelligence (Plum)
-> Production-grade intelligent personal assistant showcasing Basket's 3-Tier Context Engine and hybrid retrieval.
+### 2. Ecosystem Applications & AI Model Runtimes
+> Centralized lifecycle control for the entire suite of autonomous Fruit applications and AI backends.
 
 <div align="center">
-  <img src="docs/screenshots/plum-chat.png" alt="Plum Conversational Workspace" width="100%" style="border-radius: 10px;" />
+  <img src="docs/screenshots/overview-applications.png" alt="Applications Grid: AI Models, Plum, Kiwi, and Banana" width="100%" style="border-radius: 10px;" />
 </div>
 
-* **Lazy Context Bootstrapping**: Switches active conversation sessions in $<20\text{ms}$ by purging and bootstrapping volatile vector memory from MongoDB in a single atomic pass.
-* **Progressive Turn Indexing**: $O(1)$ concurrent batch-embedding of user and assistant responses to preserve instant short-term recall.
-* **Unconditional Guardrails**: Always guarantees that personal formatting rules and system constraints are followed without vector drift.
+* **Unified AI Model Suite**: One-click batch orchestration to start, stop, or refresh local inference (`llama.cpp` on port `10030`), speech recognition (`Qwen3-ASR` on port `10040`), and speech synthesis (`PocketTTS` on port `10050`).
+* **Granular Application Lifecycles**: Start, restart, or terminate individual Fruit backends (Plum Email Assistant, Kiwi File Converter, Banana Media Utility) without disrupting adjacent infrastructure.
+* **Direct Browser Launchers**: Single-click navigation to private loopback hostnames with active service health confirmation.
 
 ---
 
-### 3. Persistent Knowledge Base & Real-Time Sync
-> Long-term document storage, facts, and policy reference indexed across both vector and lexical search spaces.
+### 3. Low-Level Daemon Control & Process Trees
+> Granular service management displaying verified PIDs, process uptimes, and port bindings.
 
 <div align="center">
-  <img src="docs/screenshots/context-notes.png" alt="Context Notes Knowledge Base" width="100%" style="border-radius: 10px;" />
+  <img src="docs/screenshots/services-all.png" alt="Services and Models Management with Verified PIDs and Ports" width="100%" style="border-radius: 10px;" />
 </div>
 
-* **Incremental Mutation Webhooks**: Real-time REST webhooks (`POST /context/notes/sync`) instantly update or delete dense and sparse chunks with zero full-rebuild lag.
-* **Cross-Fruit Shared Memory**: Fruit applications can query persistent cross-domain knowledge while strictly isolating private namespaces.
+* **Categorized Daemon Views**: Instant category filtering across All (14), AI & Audio (3), Core Infrastructure (4), and Fruits (7).
+* **Deterministic Process Identification**: Displays exact running ports (`:10020`, `:10010`, `:80`, `:10000`), active PIDs, and running uptimes.
+* **Safe Target Isolation**: Restarts individual daemons (e.g. Quince LLM or MongoDB) with zero risk to parent shells or unrelated background tasks.
 
 ---
 
-### 4. Autonomous Fruit Workspaces (Kiwi & Banana)
+### 4. Real-Time Diagnostics & UTF-8 Log Console
+> Real-time streaming log terminal with syntax highlighting, route reachability checks, and operations audit history.
+
 <div align="center">
-  <table>
-    <tr>
-      <td width="50%" align="center">
-        <b>Kiwi: Offline File & Conversion Studio</b><br />
-        <img src="docs/screenshots/kiwi-converter.png" alt="Kiwi Converter Workspace" width="100%" style="border-radius: 8px;" />
-        <br />
-        <em>Local document, audio, video, and archive format conversion with admission control backpressure.</em>
-      </td>
-      <td width="50%" align="center">
-        <b>Banana: Private Media & Discovery Utility</b><br />
-        <img src="docs/screenshots/banana-media.png" alt="Banana Media Workspace" width="100%" style="border-radius: 8px;" />
-        <br />
-        <em>Offline audio trimming, media extraction, and algorithmic music similarity clustering.</em>
-      </td>
-    </tr>
-  </table>
+  <img src="docs/screenshots/diagnostics-logs.png" alt="Diagnostics Console with Live Log Streaming and Route Audit" width="100%" style="border-radius: 10px;" />
 </div>
+
+* **Live Azeret Mono Console**: Colored stdout and stderr streams rendered in Azeret Mono with line filtering, auto-scroll, and line limit controls.
+* **Service Stream Selection**: Instant dropdown switching between active daemons (`Quince LLM`, `Basket Gateway`, `Nginx`, `STT Engine`).
+* **Route Audit Matrix**: Active inspection of all 20 reverse-proxy routes confirming end-to-end socket reachability.
 
 ---
 
