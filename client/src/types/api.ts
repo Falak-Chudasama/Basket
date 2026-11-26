@@ -3,6 +3,8 @@ export interface ServiceStatus {
   name: string
   category: 'infrastructure' | 'fruit' | 'database' | 'llm' | 'speech' | 'proxy' | 'control'
   fruit_id: string | null
+  icon?: string | null
+  device?: string | null
   description: string
   status: 'healthy' | 'degraded' | 'stopped' | 'running'
   is_running: boolean

@@ -94,7 +94,7 @@ def get_operations_history(limit: int = 50) -> List[Dict[str, Any]]:
             return []
 
 
-def is_port_listening(host: str, port: int, timeout: float = 1.0) -> bool:
+def is_port_listening(host: str, port: int, timeout: float = 0.2) -> bool:
     """Checks if a TCP port is actively listening."""
     if not port:
         return False
@@ -209,7 +209,7 @@ class ServiceManager:
                     pass
 
                 # Windows netstat fallback for cross-session elevation boundaries
-                if sys.platform == "win32":
+                if sys.platform == "win32" and is_port_listening(self.service.host, port, timeout=0.15):
                     try:
                         target = f"{self.service.host}:{port}" if self.service.host else f":{port}"
                         out = subprocess.check_output(f'netstat -ano | findstr "{target}"', shell=True, text=True, stderr=subprocess.DEVNULL)
@@ -307,16 +307,29 @@ class ServiceManager:
 
         # Check port listening ground truth
         if self.service.port:
-            is_listening = is_port_listening(self.service.host, self.service.port)
+            is_listening = is_port_listening(self.service.host, self.service.port, timeout=0.15)
 
         # Perform health check ground truth
         if self.service.health_type == "http" and self.service.health_url:
-            h_ok, code, msg = verify_http_health(self.service.health_url)
-            health_ok = h_ok
-            health_message = f"HTTP {code} ({msg})" if code else msg
-            status = "healthy" if health_ok else ("degraded" if is_listening else "stopped")
+            same_port_closed = (
+                self.service.port is not None
+                and self.service.health_port == self.service.port
+                and not is_listening
+            )
+            if same_port_closed:
+                health_ok = False
+                health_message = "Port not listening"
+                status = "stopped"
+            else:
+                h_ok, code, msg = verify_http_health(self.service.health_url, timeout=0.8)
+                health_ok = h_ok
+                health_message = f"HTTP {code} ({msg})" if code else msg
+                status = "healthy" if health_ok else ("degraded" if is_listening else "stopped")
         elif self.service.health_type == "tcp" and self.service.health_port:
-            health_ok = is_port_listening(self.service.host, self.service.health_port)
+            if self.service.port == self.service.health_port:
+                health_ok = is_listening
+            else:
+                health_ok = is_port_listening(self.service.host, self.service.health_port, timeout=0.15)
             health_message = "Port open" if health_ok else "Port not responding"
             status = "healthy" if health_ok else "stopped"
         elif is_running:
@@ -342,6 +355,8 @@ class ServiceManager:
             "name": self.service.name,
             "category": self.service.category,
             "fruit_id": self.service.fruit_id,
+            "icon": self.service.icon,
+            "device": self.service.device,
             "description": self.service.description,
             "status": status,
             "is_running": is_running,
@@ -408,11 +423,13 @@ class ServiceManager:
                             cmd_parts.append(arg)
                     cmd_full = " ".join(cmd_parts)
                     ps_arg = f'/c {cmd_full} >> "{self.log_file}" 2>&1'.replace('"', '`"')
+                    env.setdefault("PYTHONUNBUFFERED", "1")
+                    env.setdefault("PYTHONIOENCODING", "utf-8")
                     ps_cmd = (
                         f'Start-Process -FilePath "cmd.exe" -ArgumentList "{ps_arg}" '
                         f'-WorkingDirectory "{self.service.work_dir}" -WindowStyle Hidden'
                     )
-                    subprocess.run(["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_cmd], check=False)
+                    subprocess.run(["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_cmd], env=env, check=False)
                     time.sleep(1.2)
 
                     # Verification loop
@@ -631,15 +648,72 @@ class ServiceManager:
             "message": f"Restart completed for {self.service.name}." if success else f"Restart failed for {self.service.name}.",
         }
 
+    @staticmethod
+    def _tail_file(path: Path, lines: int) -> List[str]:
+        """Efficiently reads the last N lines of a potentially large log file."""
+        if not path.exists() or lines <= 0:
+            return []
+        chunk_size = 65536
+        data = bytearray()
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            file_size = f.tell()
+            pos = file_size
+            newline_count = 0
+            while pos > 0 and newline_count <= lines:
+                read_size = min(chunk_size, pos)
+                pos -= read_size
+                f.seek(pos, os.SEEK_SET)
+                chunk = f.read(read_size)
+                data[:0] = chunk
+                newline_count += chunk.count(b"\n")
+        text = data.decode("utf-8", errors="replace")
+        all_lines = text.splitlines()
+        return all_lines[-lines:]
+
+    @staticmethod
+    def _parse_nginx_log_ts(line: str) -> float:
+        """Extracts a sortable Unix timestamp from Nginx error.log or access.log lines."""
+        try:
+            # error.log: 2026/11/26 09:57:09 [error] ...
+            if len(line) >= 19 and line[4] == "/" and line[7] == "/" and line[10] == " ":
+                dt = datetime.strptime(line[:19], "%Y/%m/%d %H:%M:%S")
+                return dt.timestamp()
+            # access.log: 127.0.0.1 - - [26/Nov/2026:10:31:59 +0530] ...
+            lbr = line.find("[")
+            rbr = line.find("]", lbr + 1)
+            if lbr != -1 and rbr != -1:
+                ts_str = line[lbr + 1 : rbr].split(" ")[0]
+                dt = datetime.strptime(ts_str, "%d/%b/%Y:%H:%M:%S")
+                return dt.timestamp()
+        except Exception:
+            pass
+        return 0.0
+
     def read_logs(self, lines: int = 150) -> List[str]:
         """Reads recent log lines for this service."""
+        if self.service.id == "nginx":
+            nginx_logs_dir = Path(r"C:\nginx\logs")
+            combined: List[Tuple[float, str]] = []
+            for fname in ("error.log", "access.log"):
+                fpath = nginx_logs_dir / fname
+                if fpath.exists():
+                    try:
+                        for ln in self._tail_file(fpath, lines):
+                            if ln.strip():
+                                combined.append((self._parse_nginx_log_ts(ln), ln))
+                    except Exception:
+                        pass
+            if combined:
+                combined.sort(key=lambda item: item[0])
+                return [item[1] for item in combined[-lines:]]
+
         if not self.log_file.exists():
             return [f"No logs generated yet for {self.service.name}."]
 
         try:
-            with open(self.log_file, "r", encoding="utf-8", errors="replace") as f:
-                all_lines = f.readlines()
-                return [line.rstrip("\r\n") for line in all_lines[-lines:]]
+            tailed = self._tail_file(self.log_file, lines)
+            return tailed if tailed else [f"No logs generated yet for {self.service.name}."]
         except Exception as e:
             return [f"Error reading log file: {e}"]
 
@@ -656,7 +730,9 @@ def get_all_service_statuses() -> List[Dict[str, Any]]:
         proc_snapshot = list(psutil.process_iter(["pid", "name", "cmdline", "create_time"]))
     except Exception:
         proc_snapshot = None
-    return [mgr.get_status(proc_snapshot=proc_snapshot) for mgr in MANAGERS.values()]
+    managers = list(MANAGERS.values())
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(managers))) as ex:
+        return list(ex.map(lambda mgr: mgr.get_status(proc_snapshot=proc_snapshot), managers))
 
 
 def get_fruit_directory_data(status_map: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:

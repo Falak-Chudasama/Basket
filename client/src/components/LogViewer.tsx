@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { RefreshCw, Copy, Check, Search, Terminal } from 'lucide-react'
 import { api } from '../api/client'
 import { useToast } from '../context/ToastContext'
 import { playEnter, playScroll, playNotification } from '../lib/sound'
+import { useShiftArrowCycle } from '../lib/keyboard'
+import { getServiceIcon } from '../lib/serviceIcons'
 import { ToggleSwitch } from './ToggleSwitch'
+import { CustomSelect, type SelectOption } from './CustomSelect'
 import type { ServiceStatus } from '../types/api'
 
 interface LogViewerProps {
@@ -17,7 +20,7 @@ const renderColoredLine = (rawLine: string) => {
     return <span className="text-stone-600 font-bold">{rawLine}</span>
   }
 
-  const tsMatch = rawLine.match(/^(\[?\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?\]?|\d{1,2}-[A-Za-z]{3}-\d{4} \d{1,2}:\d{2}:\d{2} [AP]M|\d{1,2}\/\d{1,2}\/\d{2,4} \d{1,2}:\d{2}:\d{2})/i)
+  const tsMatch = rawLine.match(/^(\[?\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?\]?|\d{1,2}-[A-Za-z]{3}-\d{4} \d{1,2}:\d{2}:\d{2} [AP]M|\d{1,2}\/\d{1,2}\/\d{2,4} \d{1,2}:\d{2}:\d{2})/i)
 
   let timestamp = ''
   let rest = rawLine
@@ -26,7 +29,7 @@ const renderColoredLine = (rawLine: string) => {
     rest = rawLine.slice(timestamp.length)
   }
 
-  const levelMatch = rest.match(/(\[(?:ERROR|WARNING|WARN|INFO|DEBUG|SUCCESS|CRITICAL)\]|(?:ERROR|WARNING|WARN|INFO|DEBUG|SUCCESS|CRITICAL):)/i)
+  const levelMatch = rest.match(/(\[(?:ERROR|WARNING|WARN|NOTICE|INFO|DEBUG|SUCCESS|CRITICAL)\]|(?:ERROR|WARNING|WARN|INFO|DEBUG|SUCCESS|CRITICAL):)/i)
   let level = ''
   let beforeLevel = ''
   let afterLevel = rest
@@ -115,32 +118,72 @@ export const LogViewer: React.FC<LogViewerProps> = ({
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true)
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [copied, setCopied] = useState<boolean>(false)
-  const terminalEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const shouldStickToBottomRef = useRef<boolean>(true)
+  const forceScrollBottomRef = useRef<boolean>(true)
+  const requestSeqRef = useRef<number>(0)
 
-  const fetchLogs = async (silent: boolean = false) => {
+  const fetchLogs = useCallback(async (silent: boolean = false) => {
     if (!selectedServiceId) return
+    const reqId = ++requestSeqRef.current
     if (!silent) setIsLoading(true)
     try {
       const res = await api.getLogs(selectedServiceId, tail)
+      if (reqId !== requestSeqRef.current) return
       setLines(res.lines || [])
     } catch (err: any) {
+      if (reqId !== requestSeqRef.current) return
       if (!silent) error('Log Read Failed', err.message)
     } finally {
-      if (!silent) setIsLoading(false)
+      if (reqId === requestSeqRef.current && !silent) {
+        setIsLoading(false)
+      }
     }
-  }
+  }, [selectedServiceId, tail, error])
 
   useEffect(() => {
+    setLines([])
+    forceScrollBottomRef.current = true
+    shouldStickToBottomRef.current = true
     fetchLogs(false)
-  }, [selectedServiceId, tail])
+  }, [fetchLogs])
 
   useEffect(() => {
     if (!autoRefresh) return
     const interval = setInterval(() => {
-      fetchLogs(true)
+      if (document.visibilityState === 'visible') {
+        fetchLogs(true)
+      }
     }, 2500)
     return () => clearInterval(interval)
-  }, [autoRefresh, selectedServiceId, tail])
+  }, [autoRefresh, fetchLogs])
+
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    if (forceScrollBottomRef.current || shouldStickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+      forceScrollBottomRef.current = false
+    }
+  }, [lines])
+
+  const serviceIds = useMemo(() => services.map(s => s.id), [services])
+
+  // Shift + ArrowUp / ArrowDown cycles selected service in LogViewer
+  useShiftArrowCycle({
+    items: serviceIds,
+    current: selectedServiceId,
+    onSelect: onSelectService,
+    axis: 'vertical',
+    onCycle: playScroll,
+  })
+
+  const handleTerminalScroll = () => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    shouldStickToBottomRef.current = distFromBottom < 48
+  }
 
   const handleCopy = () => {
     navigator.clipboard.writeText(lines.join('\n'))
@@ -169,24 +212,46 @@ export const LogViewer: React.FC<LogViewerProps> = ({
     ? lines.filter(line => line.toLowerCase().includes(searchTerm.toLowerCase()))
     : lines
 
+  const serviceOptions: SelectOption[] = useMemo(() => {
+    if (services.length === 0) {
+      return [{ value: selectedServiceId, label: selectedServiceId }]
+    }
+    return services.map(s => {
+      const iconPath = getServiceIcon(s)
+      return {
+        value: s.id,
+        label: s.name,
+        icon: iconPath ? (
+          <img src={iconPath} alt="" className="h-4 w-4 object-contain" />
+        ) : undefined,
+      }
+    })
+  }, [services, selectedServiceId])
+
+  const tailOptions: SelectOption[] = useMemo(
+    () => [
+      { value: '50', label: '50 lines' },
+      { value: '150', label: '150 lines' },
+      { value: '300', label: '300 lines' },
+      { value: '500', label: '500 lines' },
+    ],
+    []
+  )
+
   return (
-    <div className="glass-card rounded-2xl p-4 sm:p-5 shadow-soft transition-all duration-200 hover:border-stone-300 dark:hover:border-stone-700 hover:shadow-lift">
+    <div className="glass-card flex flex-col min-h-0 max-h-full rounded-2xl p-4 sm:p-5 shadow-soft transition-all duration-200 hover:border-stone-300 dark:hover:border-stone-700 hover:shadow-lift">
       {/* Sleek Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 shrink-0">
         {/* Left: Service Select */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           <Terminal className="h-4 w-4 text-stone-500 shrink-0" />
-          <select
+          <CustomSelect
             value={selectedServiceId}
-            onChange={e => handleServiceChange(e.target.value)}
-            className="focus-ring rounded-xl bg-stone-100 dark:bg-stone-800/80 px-3 py-1.5 text-caption font-semibold font-sans text-stone-900 dark:text-stone-100 border border-black/[0.05] dark:border-white/[0.06] outline-none whitespace-nowrap shrink-0"
-          >
-            {services.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.id})
-              </option>
-            ))}
-          </select>
+            onChange={handleServiceChange}
+            options={serviceOptions}
+            ariaLabel="Select service logs"
+            buttonClassName="max-w-[260px] sm:max-w-[340px]"
+          />
         </div>
 
         {/* Right: Search, Tail, Auto-Toggle, Actions */}
@@ -204,16 +269,14 @@ export const LogViewer: React.FC<LogViewerProps> = ({
           </div>
 
           {/* Tail Dropdown */}
-          <select
-            value={tail}
-            onChange={e => handleTailChange(Number(e.target.value))}
-            className="focus-ring rounded-xl bg-stone-100 dark:bg-stone-800 px-2.5 py-1.5 text-caption font-mono text-stone-600 dark:text-stone-300 border border-black/[0.04] dark:border-white/[0.05] outline-none whitespace-nowrap shrink-0"
-          >
-            <option value={50}>50 lines</option>
-            <option value={150}>150 lines</option>
-            <option value={300}>300 lines</option>
-            <option value={500}>500 lines</option>
-          </select>
+          <CustomSelect
+            value={String(tail)}
+            onChange={val => handleTailChange(Number(val))}
+            options={tailOptions}
+            ariaLabel="Log line count"
+            buttonClassName="font-mono"
+            menuClassName="right-0 left-auto"
+          />
 
           {/* Auto Refresh Switch (Section 5.2) */}
           <div className="flex items-center gap-1.5 pl-1 shrink-0">
@@ -251,24 +314,31 @@ export const LogViewer: React.FC<LogViewerProps> = ({
       </div>
 
       {/* Terminal Viewport */}
-      <div className="rounded-xl bg-[#0C0D0B] border border-stone-800/80 p-4 font-mono text-micro h-[520px] overflow-y-auto shadow-inner leading-relaxed select-text">
-        {filteredLines.length === 0 ? (
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleTerminalScroll}
+        className="rounded-xl bg-[#0C0D0B] border border-stone-800/80 p-4 font-mono text-micro flex-1 min-h-[200px] max-h-[400px] overflow-y-auto shadow-inner leading-relaxed select-text"
+      >
+        {isLoading && filteredLines.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-stone-500">
+            Loading logs...
+          </div>
+        ) : filteredLines.length === 0 ? (
           <div className="h-full flex items-center justify-center text-stone-600">
             {searchTerm ? `No logs matching "${searchTerm}".` : 'No logs recorded.'}
           </div>
         ) : (
           <div className="space-y-1">
             {filteredLines.map((line, idx) => (
-              <div key={idx} className="break-all flex items-start hover:bg-white/[0.03] px-1 py-0.5 rounded transition-colors">
+              <div key={idx} className="break-words flex items-start hover:bg-white/[0.03] px-1 py-0.5 rounded transition-colors">
                 <span className="text-stone-600 select-none mr-2.5 font-mono text-micro shrink-0 w-8 text-right">
                   {idx + 1}
                 </span>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   {renderColoredLine(line)}
                 </div>
               </div>
             ))}
-            <div ref={terminalEndRef} />
           </div>
         )}
       </div>

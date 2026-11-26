@@ -7,3 +7,5 @@ TODO:
 4. RTSI
 5. Event Env
 6. Text-in client
+7. Standardized Traceable Logging System:
+   - Define and enforce a uniform, traceable log format across Basket and every Fruit application (consistent timestamps, log levels, service/fruit tags, and request/trace context) so `LogViewer` highlights and parses all services consistently.

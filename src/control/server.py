@@ -7,6 +7,7 @@ import sys
 import time
 import json
 import shutil
+import asyncio
 import logging
 import subprocess
 import concurrent.futures
@@ -275,7 +276,7 @@ _CPU_TEMP_CACHE = {"temp": None, "time": 0.0}
 def get_cpu_temperature() -> Optional[float]:
     """Retrieves CPU thermal zone temperature in Celsius from Windows WMI."""
     now = time.time()
-    if now - _CPU_TEMP_CACHE["time"] < 1.5:
+    if now - _CPU_TEMP_CACHE["time"] < 0.9:
         return _CPU_TEMP_CACHE["temp"]
     
     val = None
@@ -381,7 +382,7 @@ async def health_check():
 
 
 @app.get("/api/system/telemetry")
-async def system_telemetry_endpoint():
+def system_telemetry_endpoint():
     """Real-time hardware telemetry: CPU, GPU, VRAM, and RAM usage."""
     return get_system_telemetry()
 
@@ -389,9 +390,13 @@ async def system_telemetry_endpoint():
 @app.get("/api/overview")
 async def get_overview():
     """Summary metrics for the dashboard overview screen."""
-    statuses = get_all_service_statuses()
+    statuses = await asyncio.to_thread(get_all_service_statuses)
     status_map = {s["id"]: s for s in statuses}
-    fruit_data = get_fruit_directory_data(status_map=status_map)
+    fruit_data, routes_checked, telemetry = await asyncio.gather(
+        asyncio.to_thread(get_fruit_directory_data, status_map),
+        get_routes(),
+        asyncio.to_thread(get_system_telemetry),
+    )
 
     total_services = len(statuses)
     running_services = sum(1 for s in statuses if s["is_running"])
@@ -399,13 +404,10 @@ async def get_overview():
     healthy_services = sum(1 for s in statuses if s["status"] == "healthy")
     degraded_services = sum(1 for s in statuses if s["status"] == "degraded")
 
-    # Route check stats (evaluated in parallel)
-    routes_checked = await get_routes()
     total_routes = len(routes_checked)
     live_routes = sum(1 for r in routes_checked if r.get("is_live"))
 
-    nginx_mgr = MANAGERS.get("nginx")
-    nginx_status = nginx_mgr.get_status() if nginx_mgr else {"status": "unknown"}
+    nginx_state = status_map.get("nginx", {}).get("status", "unknown")
 
     return {
         "metrics": {
@@ -417,9 +419,9 @@ async def get_overview():
             "total_routes": total_routes,
             "live_routes": live_routes,
             "unavailable_routes": total_routes - live_routes,
-            "nginx_state": nginx_status.get("status", "unknown"),
+            "nginx_state": nginx_state,
         },
-        "system": get_system_telemetry(),
+        "system": telemetry,
         "services": statuses,
         "fruits": fruit_data,
         "recent_operations": get_operations_history(limit=10),
@@ -427,7 +429,7 @@ async def get_overview():
 
 
 @app.get("/api/services")
-async def list_services():
+def list_services():
     """List all managed services and their verified runtime states."""
     return get_all_service_statuses()
 
@@ -522,11 +524,13 @@ async def restart_service_endpoint(service_id: str, background_tasks: Background
     if service_id == "basket-control":
         def delayed_self_restart():
             time.sleep(1.0)
+            python_exe = str(BASKET_ROOT / ".venv" / "Scripts" / "python.exe")
             ps_cmd = (
-                "$p = Get-Process -Id " + str(os.getpid()) + " -ErrorAction SilentlyContinue; "
-                "if ($p) { Stop-Process -Id " + str(os.getpid()) + " -Force }; "
-                "Start-Process -FilePath '" + str(BASKET_ROOT / ".venv" / "Scripts" / "python.exe") + "' "
-                "-ArgumentList 'run_control.py' -WorkingDirectory '" + str(BASKET_ROOT) + "'"
+                f"$p = Get-Process -Id {os.getpid()} -ErrorAction SilentlyContinue; "
+                f"if ($p) {{ Stop-Process -Id {os.getpid()} -Force }}; "
+                f"Start-Sleep -Milliseconds 300; "
+                f"Start-Process -FilePath '{python_exe}' -ArgumentList '-m','src.control.manage','start','basket-control' "
+                f"-WorkingDirectory '{BASKET_ROOT}' -WindowStyle Hidden"
             )
             subprocess.Popen(["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_cmd])
 
@@ -614,7 +618,7 @@ async def restart_fruit_endpoint(fruit_id: str):
 
 
 @app.get("/api/logs/{service_id}")
-async def get_service_logs(service_id: str, tail: int = Query(150, ge=10, le=1000)):
+def get_service_logs(service_id: str, tail: int = Query(150, ge=10, le=1000)):
     """Fetch recent log lines for a specific service."""
     if service_id not in MANAGERS:
         raise HTTPException(status_code=404, detail=f"Service '{service_id}' not found.")
@@ -643,8 +647,11 @@ async def get_routes():
             item["status_code"] = 101
             item["message"] = "WebSocket Endpoint"
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(results))) as ex:
-        list(ex.map(_check, results))
+    def _run_checks():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(results))) as ex:
+            list(ex.map(_check, results))
+
+    await asyncio.to_thread(_run_checks)
 
     return results
 

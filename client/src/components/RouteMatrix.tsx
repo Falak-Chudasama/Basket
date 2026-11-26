@@ -15,14 +15,9 @@ export const RouteMatrix: React.FC<RouteMatrixProps> = ({ routes }) => {
   return (
     <div className="glass-card rounded-2xl p-5 shadow-soft transition-all duration-200 hover:border-stone-300 dark:hover:border-stone-700 hover:shadow-lift">
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="font-sans font-bold text-subtitle text-stone-900 dark:text-stone-100">
-            Reverse Proxy Routes
-          </h3>
-          <p className="text-caption font-sans text-stone-500 dark:text-stone-400">
-            Public Nginx *.jam domain routing and upstream destinations.
-          </p>
-        </div>
+        <h3 className="font-sans font-bold text-subtitle text-stone-900 dark:text-stone-100">
+          Reverse Proxy Routes
+        </h3>
         <span className="font-mono text-caption text-stone-400 dark:text-stone-500">
           {routes.filter(r => r.is_live).length} / {routes.length} Active
         </span>

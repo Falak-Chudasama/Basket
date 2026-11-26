@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import {
-  Globe,
   Play,
   Square,
   RotateCw,
@@ -82,7 +81,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
     playEnter()
     try {
       setOperating('eco-start')
-      info('Starting Ecosystem', 'Launching services in dependency order...')
+      info('Starting Ecosystem')
       const res = await api.startAllServices()
       if (res.success) success('All Services Online', 'Ecosystem started.')
       else error('Startup Incomplete', 'Some services did not respond.')
@@ -98,7 +97,7 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
     playEnter()
     try {
       setOperating('eco-restart')
-      info('Restarting Ecosystem', 'Refreshing all services...')
+      info('Restarting Ecosystem')
       const res = await api.restartAllServices()
       if (res.success) success('Ecosystem Refreshed', 'All services restarted.')
       else error('Restart Incomplete', 'Some services failed to restart.')
@@ -138,8 +137,8 @@ export const SystemCommandBar: React.FC<SystemCommandBarProps> = ({
         {/* Nginx Section */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 shrink-0">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 shadow-xs shrink-0">
-              <Globe className="h-4 w-4 text-basket-DEFAULT dark:text-basket-200 shrink-0" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/60 dark:bg-stone-800/60 p-1.5 border border-black/[0.04] dark:border-white/[0.05] shadow-xs shrink-0">
+              <img src="/icons/nginx-icon.svg" alt="Nginx" className="h-6 w-6 object-contain" />
             </div>
             <div>
               <div className="flex items-center gap-2">

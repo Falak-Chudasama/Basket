@@ -61,10 +61,10 @@ export const FruitCard: React.FC<FruitCardProps> = ({ fruit, onMutated }) => {
       return 'Android Client (APK) • Server origins ready'
     }
     if (!fruit.component_details || fruit.component_details.length === 0) {
-      return 'Modular components'
+      return 'Modular'
     }
     const active = fruit.component_details.filter(c => c.is_running || c.is_healthy || c.is_listening)
-    if (active.length === 0) return 'All components offline'
+    if (active.length === 0) return 'Offline'
     const ports = active.map(c => `:${c.port}`).filter(p => p !== ':null' && p !== ':0')
     return `${active.length}/${fruit.component_details.length} active${ports.length > 0 ? ` (${ports.join(', ')})` : ''}`
   }
@@ -77,7 +77,11 @@ export const FruitCard: React.FC<FruitCardProps> = ({ fruit, onMutated }) => {
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/60 dark:bg-stone-800/60 p-2 border border-black/[0.04] dark:border-white/[0.05] shadow-xs shrink-0">
               {fruit.icon ? (
-                <img src={fruit.icon} alt={fruit.name} className="h-7 w-7 object-contain" />
+                <img
+                  src={fruit.icon}
+                  alt={fruit.name}
+                  className={`h-7 w-7 object-contain transition-all duration-200 ${!isRunning && !isAndroid ? 'grayscale opacity-45' : ''}`}
+                />
               ) : (
                 <span className="font-sans font-bold text-subtitle text-stone-700 dark:text-stone-300">
                   {fruit.name[0]}

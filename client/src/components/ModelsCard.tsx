@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Sparkles, Play, Square, RotateCw } from 'lucide-react'
+import { Play, Square, RotateCw } from 'lucide-react'
 import { api } from '../api/client'
 import { useToast } from '../context/ToastContext'
 import { playEnter, playBack } from '../lib/sound'
@@ -26,9 +26,9 @@ export const ModelsCard: React.FC<ModelsCardProps> = ({ services, onMutated }) =
   const stt = services.find(s => s.id === 'stt-qwen')
 
   const modelList = [
-    { label: 'LLM', name: 'Qwen 3.5 CUDA', port: 10030, service: llm },
-    { label: 'TTS', name: 'Pocket TTS', port: 10050, service: tts },
-    { label: 'STT', name: 'Qwen3 ASR', port: 10040, service: stt },
+    { label: 'LLM', name: 'Qwen 3.5 CUDA', port: 10030, icon: '/icons/llm-icon.svg', service: llm },
+    { label: 'TTS', name: 'Pocket TTS', port: 10050, icon: '/icons/tts-icon.svg', service: tts },
+    { label: 'STT', name: 'Qwen3 ASR', port: 10040, icon: '/icons/stt-icon.svg', service: stt },
   ]
 
   const activeCount = modelList.filter(m => m.service?.is_running).length
@@ -72,8 +72,12 @@ export const ModelsCard: React.FC<ModelsCardProps> = ({ services, onMutated }) =
         {/* Top Header */}
         <div className="flex items-start justify-between gap-2.5 mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-black/[0.04] dark:border-white/[0.05] shadow-xs shrink-0">
-              <Sparkles className="h-5 w-5 text-basket-DEFAULT dark:text-basket-200" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/60 dark:bg-stone-800/60 p-2 border border-black/[0.04] dark:border-white/[0.05] shadow-xs shrink-0">
+              <img
+                src="/icons/ai-icon.svg"
+                alt="AI Models"
+                className={`h-7 w-7 object-contain transition-all duration-200 ${!isAnyRunning ? 'grayscale opacity-45' : ''}`}
+              />
             </div>
             <div className="min-w-0">
               <h3 className="font-sans font-bold text-subtitle text-stone-900 dark:text-stone-100 whitespace-nowrap truncate">
@@ -106,13 +110,8 @@ export const ModelsCard: React.FC<ModelsCardProps> = ({ services, onMutated }) =
           </div>
         </div>
 
-        {/* Description */}
-        <p className="text-caption font-sans text-stone-600 dark:text-stone-400 leading-relaxed">
-          One-click batch control to start, stop, or refresh inference, speech recognition, and synthesis engines in unified sequence.
-        </p>
-
         {/* Model Chips */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {modelList.map(m => {
             const isRunning = m.service?.is_running
             return (
@@ -124,6 +123,11 @@ export const ModelsCard: React.FC<ModelsCardProps> = ({ services, onMutated }) =
                   className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                     isRunning ? 'bg-emerald-500' : 'bg-stone-400'
                   }`}
+                />
+                <img
+                  src={m.icon}
+                  alt={m.label}
+                  className={`h-3.5 w-3.5 object-contain shrink-0 transition-all duration-200 ${!isRunning ? 'grayscale opacity-45' : ''}`}
                 />
                 <span className="font-bold text-stone-700 dark:text-stone-300 font-sans">{m.label}</span>
                 <span className="text-stone-400 dark:text-stone-500">:{m.port}</span>

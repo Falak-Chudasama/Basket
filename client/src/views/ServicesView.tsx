@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { Server, Search, Sparkles, Database, Box } from 'lucide-react'
 import { ServiceRow } from '../components/ServiceRow'
 import { SegmentedControl, type SegmentOption } from '../components/SegmentedControl'
+import { playScroll } from '../lib/sound'
+import { useShiftArrowCycle } from '../lib/keyboard'
 import type { ServiceStatus } from '../types/api'
 
 interface ServicesViewProps {
@@ -11,6 +13,7 @@ interface ServicesViewProps {
 }
 
 type FilterCategory = 'all' | 'ai' | 'core' | 'fruits'
+const FILTER_ORDER: FilterCategory[] = ['all', 'ai', 'core', 'fruits']
 
 /**
  * ServicesView — Fruit Family Design System Specification
@@ -25,6 +28,14 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
 }) => {
   const [filter, setFilter] = useState<FilterCategory>('all')
   const [search, setSearch] = useState('')
+
+  // Shift + ArrowLeft / ArrowRight cycles service category filter tabs
+  useShiftArrowCycle({
+    items: FILTER_ORDER,
+    current: filter,
+    onSelect: setFilter,
+    onCycle: playScroll,
+  })
 
   const isAIMatch = (s: ServiceStatus) => ['llm', 'speech'].includes(s.category)
   const isCoreMatch = (s: ServiceStatus) => ['infrastructure', 'database', 'proxy', 'control'].includes(s.category)
@@ -54,7 +65,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
 
   const filterOptions: SegmentOption<FilterCategory>[] = [
     { id: 'all', label: 'All', count: services.length, icon: Server },
-    { id: 'ai', label: 'AI & Audio', count: aiCount, icon: Sparkles },
+    { id: 'ai', label: 'AI Models', count: aiCount, icon: Sparkles },
     { id: 'core', label: 'Core', count: coreCount, icon: Database },
     { id: 'fruits', label: 'Fruits', count: fruitCount, icon: Box },
   ]
@@ -63,14 +74,9 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
     <div className="space-y-6 animate-page-enter">
       {/* Header (PageTitle 24px / 1.5rem, Section 2.2) */}
       <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-        <div>
-          <h1 className="text-pagetitle font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
-            Services & Models
-          </h1>
-          <p className="mt-1 text-body text-stone-500 dark:text-stone-400 font-sans">
-            Low-level daemon control, llama.cpp models, STT/TTS engines, and databases.
-          </p>
-        </div>
+        <h1 className="text-pagetitle font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
+          Services & Models
+        </h1>
       </div>
 
       {/* Filter Segmented Control & Search Input (Section 5.7 & 5.3) */}
@@ -106,9 +112,6 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
             <h3 className="font-sans font-bold text-subtitle text-stone-900 dark:text-stone-100">
               No matching services
             </h3>
-            <p className="text-caption font-sans text-stone-500 dark:text-stone-400 mt-1 max-w-sm mx-auto">
-              No services match your active search or filter selection.
-            </p>
           </div>
         ) : (
           filteredServices.map(service => (

@@ -3,6 +3,7 @@ import { Play, Square, RotateCw, FileText, AlertTriangle } from 'lucide-react'
 import { api } from '../api/client'
 import { useToast } from '../context/ToastContext'
 import { playEnter, playBack } from '../lib/sound'
+import { getServiceIcon, SERVICE_DEVICE_FALLBACK } from '../lib/serviceIcons'
 import type { ServiceStatus } from '../types/api'
 
 interface ServiceRowProps {
@@ -14,7 +15,7 @@ interface ServiceRowProps {
 /**
  * ServiceRow — Fruit Family Design System Specification (Section 5.5 List Rows)
  *
- * Anatomy: Leading status indicator, title text, category badge, trailing action buttons,
+ * Anatomy: Leading status indicator, icon, title text, category badge, trailing action buttons,
  * glass-card surface, neutral hover border, and tactile micro-transforms.
  */
 export const ServiceRow: React.FC<ServiceRowProps> = ({ service, onMutated, onViewLogs }) => {
@@ -22,6 +23,8 @@ export const ServiceRow: React.FC<ServiceRowProps> = ({ service, onMutated, onVi
   const [operating, setOperating] = useState<string | null>(null)
 
   const isRunning = service.is_running || service.is_healthy || service.is_listening || service.status === 'healthy'
+  const serviceIcon = getServiceIcon(service)
+  const device = service.device || SERVICE_DEVICE_FALLBACK[service.id] || null
 
   const handleAction = async (action: 'start' | 'end' | 'restart') => {
     if (action === 'end') {
@@ -33,7 +36,7 @@ export const ServiceRow: React.FC<ServiceRowProps> = ({ service, onMutated, onVi
     try {
       setOperating(action)
       const actionLabels = { start: 'Starting', end: 'Stopping', restart: 'Restarting' }
-      info(`${actionLabels[action]} ${service.name}`, 'Dispatching process...')
+      info(`${actionLabels[action]} ${service.name}`)
 
       let res
       if (action === 'start') res = await api.startService(service.id)
@@ -85,6 +88,16 @@ export const ServiceRow: React.FC<ServiceRowProps> = ({ service, onMutated, onVi
           )}
         </div>
 
+        {serviceIcon && (
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/60 dark:bg-stone-800/60 p-1.5 border border-black/[0.04] dark:border-white/[0.05] shadow-xs shrink-0">
+            <img
+              src={serviceIcon}
+              alt={service.name}
+              className={`h-6 w-6 object-contain transition-all duration-200 ${!isRunning ? 'grayscale opacity-45' : ''}`}
+            />
+          </div>
+        )}
+
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h4 className="font-sans font-bold text-body text-stone-900 dark:text-stone-100 whitespace-nowrap truncate">
@@ -93,10 +106,18 @@ export const ServiceRow: React.FC<ServiceRowProps> = ({ service, onMutated, onVi
             <span className="font-mono text-micro text-stone-400 dark:text-stone-500 uppercase px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 whitespace-nowrap shrink-0">
               {service.category}
             </span>
+            {device && (
+              <span
+                className={`font-mono text-micro font-semibold uppercase px-1.5 py-0.5 rounded border whitespace-nowrap shrink-0 ${
+                  device === 'gpu'
+                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+                    : 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20'
+                }`}
+              >
+                {device}
+              </span>
+            )}
           </div>
-          <p className="text-caption font-sans text-stone-500 dark:text-stone-400 truncate max-w-md">
-            {service.description}
-          </p>
         </div>
       </div>
 

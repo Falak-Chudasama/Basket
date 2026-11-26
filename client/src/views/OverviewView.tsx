@@ -3,10 +3,11 @@ import { TelemetryHUD } from '../components/TelemetryHUD'
 import { SystemCommandBar } from '../components/SystemCommandBar'
 import { FruitCard } from '../components/FruitCard'
 import { ModelsCard } from '../components/ModelsCard'
-import type { OverviewResponse, NginxStatus } from '../types/api'
+import type { OverviewResponse, NginxStatus, SystemTelemetry } from '../types/api'
 
 interface OverviewViewProps {
   overview: OverviewResponse | null
+  telemetry: SystemTelemetry | null
   nginxData: NginxStatus | null
   onMutated: () => void
   isLoading?: boolean
@@ -25,6 +26,7 @@ const SORT_ORDER = ['plum', 'kiwi', 'banana', 'lemon', 'cherry']
  */
 export const OverviewView: React.FC<OverviewViewProps> = ({
   overview,
+  telemetry,
   nginxData,
   onMutated,
   isLoading,
@@ -41,18 +43,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     <div className="space-y-6 animate-page-enter">
       {/* Page Header (PageTitle 24px / 1.5rem, Section 2.2) */}
       <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-        <div>
-          <h1 className="text-pagetitle font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
-            Operations & Ecosystem
-          </h1>
-          <p className="mt-1 text-body text-stone-500 dark:text-stone-400 font-sans">
-            Hardware telemetry, reverse proxy orchestration, and local applications.
-          </p>
-        </div>
+        <h1 className="text-pagetitle font-extrabold tracking-tight text-stone-900 dark:text-stone-50 font-sans">
+          Operations & Ecosystem
+        </h1>
       </div>
 
       {/* Real-time Hardware Telemetry (CPU, RAM, GPU, VRAM) */}
-      <TelemetryHUD telemetry={overview?.system || null} isLoading={isLoading} />
+      <TelemetryHUD telemetry={telemetry} isLoading={isLoading && !telemetry} />
 
       {/* Unified Edge Proxy & Ecosystem Master Command Bar */}
       <SystemCommandBar

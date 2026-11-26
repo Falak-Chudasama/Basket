@@ -73,7 +73,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({ telemetry, isLoading
         {/* Progress Track (Section 5.11: height 6px, radius 9999px) */}
         <div className="h-1.5 w-full rounded-full bg-stone-200/50 dark:bg-stone-800 overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-700 ease-out"
+            className="h-full rounded-full transition-all duration-500 ease-out"
             style={{
               width: `${Math.min(100, Math.max(3, cpu.utilization_pct))}%`,
               backgroundColor: getDynamicBarColor(cpu.utilization_pct),
@@ -100,7 +100,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({ telemetry, isLoading
         </div>
         <div className="h-1.5 w-full rounded-full bg-stone-200/50 dark:bg-stone-800 overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-700 ease-out"
+            className="h-full rounded-full transition-all duration-500 ease-out"
             style={{
               width: `${Math.min(100, Math.max(3, memory.utilization_pct))}%`,
               backgroundColor: getDynamicBarColor(memory.utilization_pct),
@@ -132,7 +132,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({ telemetry, isLoading
         </div>
         <div className="h-1.5 w-full rounded-full bg-stone-200/50 dark:bg-stone-800 overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-700 ease-out"
+            className="h-full rounded-full transition-all duration-500 ease-out"
             style={{
               width: `${Math.min(100, Math.max(3, gpu?.gpu_utilization_pct ?? 0))}%`,
               backgroundColor: getDynamicBarColor(gpu?.gpu_utilization_pct ?? 0),
@@ -159,7 +159,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({ telemetry, isLoading
         </div>
         <div className="h-1.5 w-full rounded-full bg-stone-200/50 dark:bg-stone-800 overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-700 ease-out"
+            className="h-full rounded-full transition-all duration-500 ease-out"
             style={{
               width: `${Math.min(100, Math.max(3, gpu?.vram_pct ?? 0))}%`,
               backgroundColor: getDynamicBarColor(gpu?.vram_pct ?? 0),

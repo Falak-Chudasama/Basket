@@ -7,7 +7,8 @@ import { DiagnosticsView } from './views/DiagnosticsView'
 import { api } from './api/client'
 import { useToast } from './context/ToastContext'
 import { useSound } from './context/SoundContext'
-import type { OverviewResponse, NginxStatus, RouteStatus, OperationRecord } from './types/api'
+import { isEditableTarget } from './lib/keyboard'
+import type { OverviewResponse, NginxStatus, RouteStatus, OperationRecord, SystemTelemetry } from './types/api'
 
 const TABS: ActiveTab[] = ['overview', 'services', 'diagnostics']
 
@@ -16,6 +17,7 @@ export const App: React.FC = () => {
   const { playScroll } = useSound()
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview')
   const [overview, setOverview] = useState<OverviewResponse | null>(null)
+  const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null)
   const [nginxData, setNginxData] = useState<NginxStatus | null>(null)
   const [routesData, setRoutesData] = useState<RouteStatus[]>([])
   const [operationsData, setOperationsData] = useState<OperationRecord[]>([])
@@ -38,6 +40,9 @@ export const App: React.FC = () => {
 
       if (ovRes.status === 'fulfilled') {
         setOverview(ovRes.value)
+        if (ovRes.value.system) {
+          setTelemetry(ovRes.value.system)
+        }
         setIsOnline(true)
       } else {
         setIsOnline(false)
@@ -68,28 +73,66 @@ export const App: React.FC = () => {
     fetchAllData(false)
   }, [fetchAllData])
 
-  // Fast telemetry polling (every 2.5s) when document is active
+  // Stable 5-second telemetry polling when document is visible
   useEffect(() => {
-    const pollInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        api.getSystemTelemetry()
-          .then(telemetry => {
-            setOverview(prev => (prev ? { ...prev, system: telemetry } : prev))
-          })
-          .catch(() => {})
-      }
-    }, 2500)
+    let cancelled = false
+    let timerId: number | undefined
+    let inFlight = false
+    let lastFetchAt = 0
 
-    return () => clearInterval(pollInterval)
+    const scheduleNext = (delay: number) => {
+      if (cancelled) return
+      if (timerId !== undefined) window.clearTimeout(timerId)
+      timerId = window.setTimeout(pollTelemetry, delay)
+    }
+
+    const pollTelemetry = () => {
+      if (cancelled) return
+      if (document.visibilityState !== 'visible') {
+        scheduleNext(5000)
+        return
+      }
+      if (inFlight) {
+        scheduleNext(5000)
+        return
+      }
+
+      inFlight = true
+      lastFetchAt = Date.now()
+      api.getSystemTelemetry()
+        .then(data => {
+          if (!cancelled) setTelemetry(data)
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false
+          scheduleNext(5000)
+        })
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetchAt >= 5000 && !inFlight) {
+        pollTelemetry()
+      }
+    }
+
+    pollTelemetry()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      cancelled = true
+      if (timerId !== undefined) window.clearTimeout(timerId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
-  // Routine full overview polling (every 6s)
+  // Routine full overview polling (every 10s)
   useEffect(() => {
     const pollInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchAllData(true)
       }
-    }, 6000)
+    }, 10000)
 
     return () => clearInterval(pollInterval)
   }, [fetchAllData])
@@ -102,34 +145,23 @@ export const App: React.FC = () => {
   // Ctrl + ArrowLeft / ArrowRight Keyboard Tab Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input, textarea, or select element
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
-        return
-      }
+      if (isEditableTarget(e.target)) return
 
       // Support Ctrl + Left / Right (and Cmd + Left / Right on macOS)
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'ArrowRight' || e.key === 'Right') {
-          e.preventDefault()
-          setActiveTab(prev => {
-            const currentIndex = TABS.indexOf(prev)
-            const nextTab = TABS[(currentIndex + 1) % TABS.length]
-            playScroll()
-            return nextTab
-          })
-        } else if (e.key === 'ArrowLeft' || e.key === 'Left') {
-          e.preventDefault()
-          setActiveTab(prev => {
-            const currentIndex = TABS.indexOf(prev)
-            const nextTab = TABS[(currentIndex - 1 + TABS.length) % TABS.length]
-            playScroll()
-            return nextTab
-          })
-        }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+        const isRight = e.key === 'ArrowRight' || e.key === 'Right' || e.code === 'ArrowRight'
+        const isLeft = e.key === 'ArrowLeft' || e.key === 'Left' || e.code === 'ArrowLeft'
+        if (!isRight && !isLeft) return
+
+        e.preventDefault()
+        setActiveTab(prev => {
+          const currentIndex = TABS.indexOf(prev)
+          const nextTab = isRight
+            ? TABS[(currentIndex + 1) % TABS.length]
+            : TABS[(currentIndex - 1 + TABS.length) % TABS.length]
+          playScroll()
+          return nextTab
+        })
       }
     }
 
@@ -156,10 +188,15 @@ export const App: React.FC = () => {
       />
 
       {/* Spacious Main Container (max-w-7xl with pt-20 offset for stationary fixed navbar) */}
-      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 sm:pb-16">
+      <main
+        className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 ${
+          activeTab === 'diagnostics' ? 'pb-20 sm:pb-5' : 'pb-24 sm:pb-16'
+        }`}
+      >
         {activeTab === 'overview' && (
           <OverviewView
             overview={overview}
+            telemetry={telemetry}
             nginxData={nginxData}
             onMutated={() => fetchAllData(true)}
             isLoading={isLoading}
@@ -183,11 +220,6 @@ export const App: React.FC = () => {
             setSelectedLogService={setSelectedLogService}
           />
         )}
-
-        {/* Minimal Quiet Footer */}
-        <footer className="mt-16 pt-6 border-t border-black/[0.04] dark:border-white/[0.05] text-center text-caption text-stone-400 dark:text-stone-600 font-sans">
-          <p>Basket • Fruit Family Operations Control Plane</p>
-        </footer>
       </main>
 
       {/* Mobile Floating Bottom Bar Dock (< 640px viewport per Section 4.1 & 5.6) */}

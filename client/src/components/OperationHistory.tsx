@@ -24,14 +24,9 @@ export const OperationHistory: React.FC<OperationHistoryProps> = ({ operations }
   return (
     <div className="glass-card rounded-2xl p-5 shadow-soft transition-all duration-200 hover:border-stone-300 dark:hover:border-stone-700 hover:shadow-lift">
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="font-sans font-bold text-subtitle text-stone-900 dark:text-stone-100">
-            Operations Audit Log
-          </h3>
-          <p className="text-caption font-sans text-stone-500 dark:text-stone-400">
-            Recorded server actions, process dispatches, and execution latencies.
-          </p>
-        </div>
+        <h3 className="font-sans font-bold text-subtitle text-stone-900 dark:text-stone-100">
+          Operations Audit Log
+        </h3>
         <span className="font-mono text-caption text-stone-400 dark:text-stone-500">
           {operations.length} Recorded
         </span>
@@ -52,7 +47,7 @@ export const OperationHistory: React.FC<OperationHistoryProps> = ({ operations }
             {operations.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-6 text-center text-stone-400 dark:text-stone-600 font-sans whitespace-nowrap">
-                  No operations executed yet in this session.
+                  No operations yet.
                 </td>
               </tr>
             ) : (
